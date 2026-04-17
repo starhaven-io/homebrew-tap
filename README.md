@@ -13,4 +13,5 @@ brew install <cask-name>
 
 | Cask | Description |
 | --- | --- |
+| [`macosdb`](https://github.com/starhaven-io/macOSdb) | Catalog of open-source components from .ipsw and .xip files |
 | [`pinprick`](https://github.com/starhaven-io/pinprick) | Pin your GitHub Actions and prick holes in their supply chain security |
