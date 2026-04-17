@@ -1,0 +1,6 @@
+self-hosted-runner:
+  labels: []
+paths:
+  '**/*.{yml,yaml}':
+    ignore:
+      - 'unexpected key "deployment"'
