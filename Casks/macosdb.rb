@@ -8,7 +8,7 @@ cask "macosdb" do
   homepage "https://github.com/starhaven-io/macOSdb"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
 
   app "macOSdb.app"
   binary "#{appdir}/macOSdb.app/Contents/MacOS/macosdb-tool", target: "macosdb"
