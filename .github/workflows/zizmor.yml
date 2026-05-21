@@ -36,7 +36,7 @@ jobs:
     steps:
       - name: Set up Homebrew
         id: setup-homebrew
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@7a2984f77c47b370db00ef04a8531a293b169c9a # main
         with:
           core: false
           cask: false
