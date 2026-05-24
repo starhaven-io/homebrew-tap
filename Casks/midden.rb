@@ -21,4 +21,6 @@ cask "midden" do
   end
 
   binary "midden"
+
+  generate_completions_from_executable "midden", "completions"
 end

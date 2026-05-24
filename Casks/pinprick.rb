@@ -22,5 +22,7 @@ cask "pinprick" do
 
   binary "pinprick"
 
+  generate_completions_from_executable "pinprick", "completions"
+
   zap trash: "~/.config/pinprick"
 end
