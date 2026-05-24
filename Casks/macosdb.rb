@@ -13,6 +13,8 @@ cask "macosdb" do
   app "macOSdb.app"
   binary "#{appdir}/macOSdb.app/Contents/MacOS/macosdb-tool", target: "macosdb"
 
+  generate_completions_from_executable "#{appdir}/macOSdb.app/Contents/MacOS/macosdb-tool", "completions"
+
   zap trash: [
     "~/Library/Application Scripts/io.linnane.macOSdb",
     "~/Library/Caches/io.linnane.macosdb",
