@@ -6,7 +6,7 @@ cask "midden" do
 
   url "https://github.com/starhaven-io/midden/releases/download/v#{version}/midden-#{version}-#{arch}-#{os}.tar.gz"
   name "midden"
-  desc "Resolve, audit, and garbage-collect Claude Code's accumulated state"
+  desc "Audit Claude Code's config sprawl. Clean up the midden left behind"
   homepage "https://github.com/starhaven-io/midden"
 
   on_macos do
@@ -21,6 +21,4 @@ cask "midden" do
   end
 
   binary "midden"
-
-  zap trash: "~/.config/midden"
 end
