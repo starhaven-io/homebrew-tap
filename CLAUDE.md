@@ -47,7 +47,7 @@ Common types: `feat`, `fix`, `refactor`, `docs`, `ci`, `chore`
 
 All commits must:
 - Include a `Signed-off-by` trailer for DCO sign-off
-- Include a `Co-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` trailer when authored with Claude, placed after `Signed-off-by`
+- Include a `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer when authored with Claude, placed after `Signed-off-by`. Bump the model version as newer ones ship.
 
 ## Git Workflow
 
