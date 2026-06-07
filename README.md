@@ -14,4 +14,5 @@ brew install <cask-name>
 | Cask | Description |
 | --- | --- |
 | [`macosdb`](https://github.com/starhaven-io/macOSdb) | Catalog of open-source components from .ipsw and .xip files |
+| [`midden`](https://github.com/starhaven-io/midden) | Audit Claude Code's config sprawl. Clean up the midden left behind |
 | [`pinprick`](https://github.com/starhaven-io/pinprick) | Pin your GitHub Actions and prick holes in their supply chain security |
