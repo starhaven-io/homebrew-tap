@@ -131,7 +131,9 @@ jobs:
           IS_CASK: ${{ matrix.cask && 'true' || 'false' }}
         run: |
           if [[ "$IS_CASK" == "true" ]]; then
-            brew audit --cask --online --strict "$CASK_TOKEN"
+            # Qualify with the tap so a token that also exists in Homebrew/homebrew-cask
+            # (e.g. brewy) audits this tap's cask, not the upstream one.
+            brew audit --cask --online --strict "${GITHUB_REPOSITORY}/$CASK_TOKEN"
           else
             brew audit --cask --online --strict --tap "$TAP"
           fi
