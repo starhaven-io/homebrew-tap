@@ -7,6 +7,7 @@ cask "macosdb" do
   desc "Catalog of open-source components from .ipsw and .xip files"
   homepage "https://github.com/starhaven-io/macOSdb"
 
+  auto_updates true
   depends_on arch: :arm64
   depends_on macos: :sequoia
 
