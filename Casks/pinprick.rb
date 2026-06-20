@@ -4,10 +4,11 @@ cask "pinprick" do
 
   version "0.16.0"
 
-  url "https://github.com/starhaven-io/pinprick/releases/download/v#{version}/pinprick-#{version}-#{arch}-#{os}.tar.gz"
+  url "https://github.com/starhaven-io/pinprick/releases/download/v#{version}/pinprick-#{version}-#{arch}-#{os}.tar.gz",
+      verified: "github.com/starhaven-io/pinprick/"
   name "pinprick"
-  desc "Pin your GitHub Actions. Prick holes in their supply chain security"
-  homepage "https://github.com/starhaven-io/pinprick"
+  desc "GitHub Actions supply chain security tool"
+  homepage "https://pinprick.rs/"
 
   on_macos do
     sha256 "6f15bdfd281dd3b4b220e5cf75091e80ab73186671704bfb89c663e7784fda69"
