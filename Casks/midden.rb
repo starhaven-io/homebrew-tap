@@ -2,7 +2,7 @@ cask "midden" do
   arch arm: "aarch64", intel: "x86_64"
   os macos: "apple-darwin", linux: "unknown-linux-gnu"
 
-  version "0.3.0"
+  version "0.4.0"
 
   url "https://github.com/starhaven-io/midden/releases/download/v#{version}/midden-#{version}-#{arch}-#{os}.tar.gz"
   name "midden"
@@ -10,14 +10,14 @@ cask "midden" do
   homepage "https://github.com/starhaven-io/midden"
 
   on_macos do
-    sha256 "a95bbb1f8b99a6a1c0aab0d7525427c13bda820cad5c470c3c9073f34c6642c0"
+    sha256 "1fd52de2505aceacb53b4a8117f93e802ac63b4611fb2831d0ed314b675dc98e"
 
     depends_on arch: :arm64
   end
 
   on_linux do
-    sha256 arm64_linux:  "46b90b7f4e167b47ff43968a99bb1548f37d71138764b23b780b239de4fa0887",
-           x86_64_linux: "4134a58dd1be85a18bf03d7e395d698b243127dd48dbeec775eb20e535971554"
+    sha256 arm64_linux:  "e4f126ce35899b163333c81bd5241ee67c52570f932c6231568e35af273f137b",
+           x86_64_linux: "81aca6d78a5eb21b2c36548f8ec8efc0e1cd28314a5486700df0387b7a9a9162"
   end
 
   binary "midden"
