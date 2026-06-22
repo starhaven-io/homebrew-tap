@@ -45,6 +45,7 @@ jobs:
       casks: ${{ steps.casks.outputs.casks }}
       install: ${{ steps.casks.outputs.install }}
       matrix: ${{ steps.casks.outputs.matrix }}
+      run_casks: ${{ steps.casks.outputs.run_casks }}
     steps:
       - name: Set up Homebrew
         id: setup-homebrew
@@ -70,6 +71,15 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_CASKS//[[:space:],]/}" ]]; then
             normalized="${INPUT_CASKS//,/ }"
             read -r -a tokens <<< "${normalized}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            base_ref="origin/${GITHUB_BASE_REF}"
+            if ! git rev-parse --verify --quiet "${base_ref}" >/dev/null; then
+              git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+            fi
+            while IFS= read -r path; do
+              token="${path#Casks/}"
+              tokens+=("${token%.rb}")
+            done < <(git diff --name-only --diff-filter=ACMR "${base_ref}...HEAD" -- "Casks/*.rb")
           else
             # bash 3.2 on the macOS runner has no mapfile; read into the array.
             while IFS= read -r token; do
@@ -84,9 +94,24 @@ jobs:
             tokens=("${deduped[@]}")
           fi
 
-          if [[ "${#tokens[@]}" -eq 0 ]]; then
+          if [[ "${#tokens[@]}" -eq 0 && "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
             echo "::error::No casks selected"
             exit 1
+          fi
+
+          if [[ "${#tokens[@]}" -eq 0 ]]; then
+            {
+              echo "casks=[]"
+              echo 'matrix={"include":[]}'
+              echo "run_casks=false"
+              echo "install=false"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          run_casks=true
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            run_casks=false
           fi
 
           for token in "${tokens[@]}"; do
@@ -121,6 +146,7 @@ jobs:
             '
           )"
           echo "matrix=${matrix_json}" >> "${GITHUB_OUTPUT}"
+          echo "run_casks=${run_casks}" >> "${GITHUB_OUTPUT}"
 
           install=false
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${INPUT_INSTALL}" == "true" ]]; then
@@ -134,7 +160,7 @@ jobs:
   cask:
     name: ${{ matrix.cask }} (${{ matrix.runner }})
     needs: syntax
-    if: ${{ github.event_name != 'push' }}
+    if: ${{ needs.syntax.outputs.run_casks == 'true' }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -194,10 +220,10 @@ jobs:
       - name: Result
         env:
           CASK_RESULT: ${{ needs.cask.result }}
-          EVENT_NAME: ${{ github.event_name }}
+          RUN_CASKS: ${{ needs.syntax.outputs.run_casks }}
           SYNTAX_RESULT: ${{ needs.syntax.result }}
         run: |
           test "${SYNTAX_RESULT}" = "success"
-          if [[ "${EVENT_NAME}" != "push" ]]; then
+          if [[ "${RUN_CASKS}" == "true" ]]; then
             test "${CASK_RESULT}" = "success"
           fi
