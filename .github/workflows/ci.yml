@@ -136,7 +136,7 @@ jobs:
                 include: (
                   map(
                     if . == "midden" or . == "pinprick" then
-                      [{cask: ., runner: "macos-26"}, {cask: ., runner: "ubuntu-latest"}]
+                      [{cask: ., runner: "macos-26"}, {cask: ., runner: "ubuntu-24.04"}]
                     else
                       [{cask: ., runner: "macos-26"}]
                     end
