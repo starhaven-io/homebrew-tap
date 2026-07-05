@@ -55,6 +55,12 @@ Before committing README link changes:
 
 ## Project-specific notes
 
+### PR flow notes
+
+- Keep diffs focused. Avoid unrelated version bumps, README churn, or workflow
+  rewrites while touching a cask.
+- PRs are squash-merged with the PR number appended.
+
 ### Cask guidelines
 
 1. Keep every package as a cask. Do not introduce formulae.
@@ -101,32 +107,15 @@ Before committing README link changes:
 
 ## Commit and PR conventions
 
-Use Conventional Commits:
-
-- `feat(scope): description`
-- `fix(scope): description`
-- `refactor(scope): description`
-- `docs(scope): description`
-- `ci(scope): description`
-- `chore(scope): description`
-
-All commits must include a `Signed-off-by` trailer for DCO sign-off.
-Run `just install-hooks` once per clone so DCO sign-off and pre-push checks are
-active.
-
-When authored with an AI coding agent, include the appropriate
-`Co-Authored-By` trailer after `Signed-off-by`:
-
-- Claude: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
-- Codex: `Co-Authored-By: Codex GPT-5 <noreply@openai.com>`
-
-Bump the model version in the trailer as newer models ship.
-
-### Git and PR flow
-
-1. Never commit directly to `main`; create a feature branch and open a PR.
-2. Keep diffs focused. Avoid unrelated version bumps, README churn, or workflow
-   rewrites while touching a cask.
-3. PR descriptions should contain only a concise summary of the changes. Do not
-   add test-plan sections, bot attribution, or generated-with footers.
-4. PRs are squash-merged with the PR number appended.
+- Conventional Commits: `type(scope): description`. Valid types: `feat`,
+  `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
+- Sign off every commit with `git commit -s` for DCO (enforced by the
+  `.githooks/commit-msg` hook; run `just install-hooks` once per clone to
+  enable it).
+- When authored with an AI coding agent, add a `Co-Authored-By` trailer after
+  `Signed-off-by`, naming the agent and model. Current example:
+  `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`. Bump the model
+  version as newer ones ship.
+- Never commit directly to `main`; create a feature branch and open a PR.
+- PR descriptions should contain only a concise summary of changes. Do not add
+  test-plan sections, bot attribution, or generated-with footers.
