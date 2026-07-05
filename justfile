@@ -20,9 +20,10 @@ test-bot:
 zizmor:
     zizmor .
 
-# Audit the action supply chain for runtime fetches
+# fleet:block pinprick-audit
 pinprick-audit:
     pinprick audit .
+# fleet:end
 
 # Check README links
 lychee:
@@ -75,6 +76,13 @@ check:
 
 # Setup
 
-# Install git hooks (DCO sign-off + pre-push checks) — run once per clone
+# fleet:block install-hooks
+# Install git hooks (DCO sign-off + pre-push checks). Run once per clone.
 install-hooks:
     git config core.hooksPath .githooks
+# fleet:end
+
+# fleet:block audit
+audit:
+    zizmor --persona auditor .github/workflows/
+# fleet:end

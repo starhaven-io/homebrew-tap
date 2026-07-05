@@ -1,7 +1,11 @@
 # homebrew-tap
 
+<!-- fleet:block badges -->
+
 [![CI](https://github.com/starhaven-io/homebrew-tap/actions/workflows/ci.yml/badge.svg)](https://github.com/starhaven-io/homebrew-tap/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+<!-- fleet:end -->
 
 The official [Homebrew](https://brew.sh) tap for [starhaven.io](https://starhaven.io) software.
 
@@ -21,6 +25,10 @@ brew install <cask-name>
 | [`midden`](https://github.com/starhaven-io/midden) | Resolve, audit, and garbage-collect Claude Code's accumulated state |
 | [`pinprick`](https://github.com/starhaven-io/pinprick) | GitHub Actions supply chain security tool |
 
+<!-- fleet:block license-section -->
+
 ## License
 
 This tap is licensed under the [MIT License](LICENSE).
+
+<!-- fleet:end -->
