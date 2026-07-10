@@ -1,7 +1,6 @@
 schema: 1
 license: "mit"
 params:
-  zizmor-config: true
   dependabot:
     - package-ecosystem: "github-actions"
       group: "github-actions"
