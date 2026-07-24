@@ -5,7 +5,7 @@ export HOMEBREW_NO_AUTO_UPDATE := "1"
 export HOMEBREW_NO_ENV_HINTS := "1"
 
 # Audit a cask by token
-audit token:
+audit-cask token:
     brew audit --cask --online --strict starhaven-io/tap/{{ token }}
 
 # Fetch a cask by token
