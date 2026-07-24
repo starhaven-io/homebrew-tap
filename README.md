@@ -22,7 +22,7 @@ brew install <cask-name>
 | --- | --- |
 | [`brewy`](https://github.com/starhaven-io/Brewy) | Simple Homebrew GUI |
 | [`macosdb`](https://github.com/starhaven-io/macOSdb) | Catalog of open-source components from .ipsw and .xip files |
-| [`midden`](https://github.com/starhaven-io/midden) | Resolve, audit, and garbage-collect Claude Code's accumulated state |
+| [`midden`](https://github.com/starhaven-io/midden) | Resolve, audit, visualize, and clean coding-agent context and state |
 | [`pinprick`](https://github.com/starhaven-io/pinprick) | GitHub Actions supply chain security tool |
 
 <!-- fleet:block license-section -->
