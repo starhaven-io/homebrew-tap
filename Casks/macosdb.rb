@@ -12,7 +12,6 @@ cask "macosdb" do
   depends_on macos: :sequoia
 
   binary "macosdb"
-
   generate_completions_from_executable "macosdb", "completions"
 
   zap trash: [
