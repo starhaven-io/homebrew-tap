@@ -21,7 +21,6 @@ cask "pinprick" do
   homepage "https://pinprick.rs/"
 
   binary "pinprick"
-
   generate_completions_from_executable "pinprick", "completions"
 
   zap trash: "~/.config/pinprick"
