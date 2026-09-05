@@ -4,21 +4,48 @@ export HOMEBREW_DEVELOPER := "1"
 export HOMEBREW_NO_AUTO_UPDATE := "1"
 export HOMEBREW_NO_ENV_HINTS := "1"
 
+tap_name := env_var_or_default("HOMEBREW_TAP_NAME", "starhaven-io/tap")
+
 # Audit a cask by token
 audit-cask token:
-    brew audit --cask --online --strict starhaven-io/tap/{{ token }}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    token={{ quote(token) }}
+    resolved_tap="$(bash scripts/verify_tap_worktree.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
+    ruby scripts/cask_matrix.rb "${token}" > /dev/null
+    brew audit --cask --online --strict "${resolved_tap}/${token}"
 
 # Fetch a cask by token
 fetch token:
-    brew fetch --cask --retry --force starhaven-io/tap/{{ token }}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    token={{ quote(token) }}
+    resolved_tap="$(bash scripts/verify_tap_worktree.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
+    ruby scripts/cask_matrix.rb "${token}" > /dev/null
+    brew fetch --cask --retry --force "${resolved_tap}/${token}"
 
 # Run repository-wide Homebrew syntax checks
 test-bot:
-    brew test-bot --tap starhaven-io/tap --only-tap-syntax
+    #!/usr/bin/env bash
+    set -euo pipefail
+    resolved_tap="$(bash scripts/verify_tap_worktree.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
+    brew test-bot --tap "${resolved_tap}" --only-tap-syntax
+
+# Test CI policy and cask platform routing
+test:
+    ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
+
+# Lint GitHub Actions workflows
+actionlint:
+    actionlint
+
+# Lint repository shell scripts
+shellcheck:
+    shellcheck scripts/*.sh
 
 # Audit GitHub Actions workflows with the repo zizmor policy
 zizmor:
-    zizmor .
+    zizmor --persona auditor .
 
 # fleet:block pinprick-audit
 pinprick-audit:
@@ -48,9 +75,20 @@ check:
         echo "--- $1 --- skipped ($2 not found)"
         skipped+=("$2 (brew install $3)")
     }
-    run test-bot brew test-bot --tap starhaven-io/tap --only-tap-syntax
+    run test-bot bash scripts/check_homebrew_syntax.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }}
+    run tests ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
+    if command -v actionlint &>/dev/null; then
+        run actionlint actionlint
+    else
+        skip actionlint actionlint actionlint
+    fi
+    if command -v shellcheck &>/dev/null; then
+        run shellcheck shellcheck scripts/*.sh
+    else
+        skip shellcheck shellcheck shellcheck
+    fi
     if command -v zizmor &>/dev/null; then
-        run zizmor zizmor .
+        run zizmor zizmor --persona auditor .
     else
         skip zizmor zizmor zizmor
     fi
@@ -75,6 +113,10 @@ check:
     exit "$failed"
 
 # Setup
+
+# Link this checkout under a private tap alias for token-based Homebrew checks.
+link-tap alias="starhaven-worktree/tap":
+    bash scripts/link_tap_worktree.sh {{ quote(alias) }} {{ quote(justfile_directory()) }}
 
 # fleet:block install-hooks
 # Install git hooks (AI trailer guard + DCO sign-off + pre-push checks). Run once per clone.

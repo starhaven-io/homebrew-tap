@@ -19,6 +19,13 @@ trusting token-based checks, verify that `brew --repo starhaven-io/tap` points a
 the checkout you are editing; otherwise the command audits the installed tap
 checkout, not this working tree.
 
+For a second checkout or worktree, run `just link-tap` once. Checks discover a
+unique private alias that resolves to this checkout when the canonical tap
+points elsewhere. Set `HOMEBREW_TAP_NAME` to select an alias explicitly when
+more than one exists. The helper refuses the canonical owner and will not
+replace an existing tap path. Homebrew checks fail closed when no unique alias
+resolves to this checkout.
+
 ## Required checks
 
 Before committing cask changes:
@@ -35,13 +42,32 @@ Before committing cask changes:
 
 Before committing workflow changes:
 
-- Run `zizmor .` when available.
+- Run `zizmor --persona auditor .` when available.
 - Run `pinprick audit .` when workflow permissions, action pins, or runner
   behavior changes.
 
 Before committing README link changes:
 
 - Run `just lychee`.
+
+The repository test suite covers exact cask inventory/platform routing,
+invalid and symlinked cask inputs, local tap alias safety, and publisher update
+content and release provenance. Fleet's required commit-policy workflow and the
+managed local hook enforce DCO sign-offs. Run the repository tests with
+`just test`; `just check` adds Homebrew syntax and all available workflow,
+shell, supply-chain, and link linters.
+
+The audit jobs in `ci.yml` provide the always-running pull-request aggregate
+consumed by `conclusion`. Fleet-rendered standalone audit/link workflows retain
+their separate push, SARIF, and scheduled responsibilities. Preserve both roles
+when changing the workflow topology; identical tools do not make the triggers
+or reporting contracts interchangeable.
+
+Keep `Verify publisher cask` as a separately required, main-targeted
+`pull_request_target` check. It must execute only base-branch code, treat
+proposed cask blobs as data, and retain read-only permissions. The `bump-`
+and `fleet-sync-` branch prefixes are reserved for publisher automation.
+Bot-authored pull requests outside those lowercase namespaces fail closed.
 
 ## Repository structure
 

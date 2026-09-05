@@ -14,8 +14,7 @@ cask "pinprick" do
            x86_64_linux: "f3c4f51423c521c8b1f34588f3d2d228b0604497a9e4c09eab438acc12b558ee"
   end
 
-  url "https://github.com/starhaven-io/pinprick/releases/download/v#{version}/pinprick-#{version}-#{arch}-#{os}.tar.gz",
-      verified: "github.com/starhaven-io/pinprick/"
+  url "https://github.com/starhaven-io/pinprick/releases/download/v#{version}/pinprick-#{version}-#{arch}-#{os}.tar.gz"
   name "pinprick"
   desc "GitHub Actions supply chain security tool"
   homepage "https://pinprick.rs/"
@@ -23,5 +22,8 @@ cask "pinprick" do
   binary "pinprick"
   generate_completions_from_executable "pinprick", "completions"
 
-  zap trash: "~/.config/pinprick"
+  zap trash: [
+    "~/.cache/pinprick",
+    "~/.config/pinprick",
+  ]
 end
