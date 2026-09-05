@@ -36,6 +36,34 @@ concurrency:
 permissions: {}
 
 jobs:
+  links:
+    name: Links
+    permissions:
+      contents: read
+    uses: starhaven-io/.github/.github/workflows/reusable-link-check.yml@b1fbde19ff11c4a6ccefe2e46872f3bb7cf4ba0b # v2026.09.04.1
+    with:
+      args: "--config lychee.toml README.md"
+      build-site: false
+      site-directory: ""
+      authenticated-github: true
+
+  pinprick:
+    name: Workflow supply-chain audit
+    permissions:
+      contents: read
+    uses: starhaven-io/.github/.github/workflows/reusable-pinprick-audit.yml@b1fbde19ff11c4a6ccefe2e46872f3bb7cf4ba0b # v2026.09.04.1
+    with:
+      advanced-security: false
+      fail-on-findings: true
+
+  zizmor:
+    name: Workflow security audit
+    permissions:
+      contents: read
+    uses: starhaven-io/.github/.github/workflows/reusable-zizmor.yml@b1fbde19ff11c4a6ccefe2e46872f3bb7cf4ba0b # v2026.09.04.1
+    with:
+      advanced-security: false
+
   syntax:
     name: Syntax
     runs-on: macos-26
@@ -62,6 +90,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify active tap checkout
+        id: tap
+        run: |
+          resolved_tap="$(bash scripts/verify_tap_worktree.sh "${GITHUB_WORKSPACE}" "${GITHUB_REPOSITORY}")"
+          echo "name=${resolved_tap}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install workflow linters
+        run: brew install actionlint shellcheck
+
+      - name: Test repository automation
+        run: |
+          ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
+          brew style scripts test
+          actionlint
+          shellcheck scripts/*.sh
+
       - name: Resolve cask list
         id: casks
         env:
@@ -77,21 +121,36 @@ jobs:
             if ! git rev-parse --verify --quiet "${base_ref}" >/dev/null; then
               git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
             fi
+            cask_paths="${RUNNER_TEMP}/changed-casks.txt"
+            if ! git diff --name-only --diff-filter=ACMR "${base_ref}...HEAD" -- "Casks/*.rb" > "${cask_paths}"; then
+              echo "::error::Could not enumerate changed casks"
+              exit 1
+            fi
             while IFS= read -r path; do
               token="${path#Casks/}"
               tokens+=("${token%.rb}")
-            done < <(git diff --name-only --diff-filter=ACMR "${base_ref}...HEAD" -- "Casks/*.rb")
+            done < "${cask_paths}"
           else
             # bash 3.2 on the macOS runner has no mapfile; read into the array.
+            cask_paths="${RUNNER_TEMP}/all-casks.txt"
+            if ! find Casks -maxdepth 1 -type f -name "*.rb" -exec basename {} .rb \; | sort > "${cask_paths}"; then
+              echo "::error::Could not enumerate repository casks"
+              exit 1
+            fi
             while IFS= read -r token; do
               tokens+=("${token}")
-            done < <(find Casks -maxdepth 1 -type f -name "*.rb" -exec basename {} .rb \; | sort)
+            done < "${cask_paths}"
           fi
           if [[ "${#tokens[@]}" -gt 0 ]]; then
             deduped=()
+            deduped_paths="${RUNNER_TEMP}/deduped-casks.txt"
+            if ! printf "%s\n" "${tokens[@]}" | sort -u > "${deduped_paths}"; then
+              echo "::error::Could not normalize selected casks"
+              exit 1
+            fi
             while IFS= read -r token; do
               deduped+=("${token}")
-            done < <(printf "%s\n" "${tokens[@]}" | sort -u)
+            done < "${deduped_paths}"
             tokens=("${deduped[@]}")
           fi
 
@@ -115,37 +174,12 @@ jobs:
             run_casks=false
           fi
 
-          for token in "${tokens[@]}"; do
-            if [[ ! "${token}" =~ ^[a-z0-9][a-z0-9_.+-]*$ ]]; then
-              echo "::error::Invalid cask token: ${token}"
-              exit 1
-            fi
-            if [[ ! -f "Casks/${token}.rb" ]]; then
-              echo "::error::Unknown cask token: ${token}"
-              exit 1
-            fi
-          done
-
           {
             printf "casks="
             printf "%s\n" "${tokens[@]}" | jq -R . | jq -s -c .
           } >> "${GITHUB_OUTPUT}"
 
-          matrix_json="$(
-            printf "%s\n" "${tokens[@]}" | jq -R -s -c '
-              split("\n")[:-1] | {
-                include: (
-                  map(
-                    if . == "midden" or . == "pinprick" then
-                      [{cask: ., runner: "macos-26"}, {cask: ., runner: "ubuntu-24.04"}]
-                    else
-                      [{cask: ., runner: "macos-26"}]
-                    end
-                  ) | add
-                )
-              }
-            '
-          )"
+          matrix_json="$(ruby scripts/cask_matrix.rb "${tokens[@]}")"
           echo "matrix=${matrix_json}" >> "${GITHUB_OUTPUT}"
           echo "run_casks=${run_casks}" >> "${GITHUB_OUTPUT}"
 
@@ -156,7 +190,9 @@ jobs:
           echo "install=${install}" >> "${GITHUB_OUTPUT}"
 
       - name: Verify tap syntax
-        run: brew test-bot --tap "${GITHUB_REPOSITORY}" --only-tap-syntax
+        env:
+          TAP_NAME: ${{ steps.tap.outputs.name }}
+        run: brew test-bot --tap "${TAP_NAME}" --only-tap-syntax
 
   cask:
     name: ${{ matrix.cask }} (${{ matrix.runner }})
@@ -184,16 +220,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify active tap checkout
+        id: tap
+        run: |
+          resolved_tap="$(bash scripts/verify_tap_worktree.sh "${GITHUB_WORKSPACE}" "${GITHUB_REPOSITORY}")"
+          echo "name=${resolved_tap}" >> "${GITHUB_OUTPUT}"
+
       - name: Fetch cask
         env:
           CASK: ${{ matrix.cask }}
-        run: brew fetch --cask --retry --force "${GITHUB_REPOSITORY}/${CASK}"
+          TAP_NAME: ${{ steps.tap.outputs.name }}
+        run: brew fetch --cask --retry --force "${TAP_NAME}/${CASK}"
         timeout-minutes: 30
 
       - name: Audit cask
         env:
           CASK: ${{ matrix.cask }}
-        run: brew audit --cask --online --strict "${GITHUB_REPOSITORY}/${CASK}"
+          TAP_NAME: ${{ steps.tap.outputs.name }}
+        run: brew audit --cask --online --strict "${TAP_NAME}/${CASK}"
         timeout-minutes: 30
 
       - name: Install cask
@@ -201,7 +245,8 @@ jobs:
         if: needs.syntax.outputs.install == 'true'
         env:
           CASK: ${{ matrix.cask }}
-        run: brew install --cask "${GITHUB_REPOSITORY}/${CASK}"
+          TAP_NAME: ${{ steps.tap.outputs.name }}
+        run: brew install --cask "${TAP_NAME}/${CASK}"
         timeout-minutes: 30
 
       - name: Uninstall cask
@@ -214,8 +259,11 @@ jobs:
   conclusion:
     name: conclusion
     needs:
+      - links
+      - pinprick
       - syntax
       - cask
+      - zizmor
     runs-on: ubuntu-slim
     timeout-minutes: 15
     if: always()
@@ -223,10 +271,16 @@ jobs:
       - name: Result
         env:
           CASK_RESULT: ${{ needs.cask.result }}
+          LINKS_RESULT: ${{ needs.links.result }}
+          PINPRICK_RESULT: ${{ needs.pinprick.result }}
           RUN_CASKS: ${{ needs.syntax.outputs.run_casks }}
           SYNTAX_RESULT: ${{ needs.syntax.result }}
+          ZIZMOR_RESULT: ${{ needs.zizmor.result }}
         run: |
+          test "${LINKS_RESULT}" = "success"
+          test "${PINPRICK_RESULT}" = "success"
           test "${SYNTAX_RESULT}" = "success"
+          test "${ZIZMOR_RESULT}" = "success"
           if [[ "${RUN_CASKS}" == "true" ]]; then
             test "${CASK_RESULT}" = "success"
           fi

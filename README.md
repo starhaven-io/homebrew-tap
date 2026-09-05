@@ -18,12 +18,12 @@ brew install <cask-name>
 
 ## Casks
 
-| Cask | Description |
-| --- | --- |
-| [`brewy`](https://github.com/starhaven-io/Brewy) | Simple Homebrew GUI |
-| [`macosdb`](https://github.com/starhaven-io/macOSdb) | Catalog of open-source components from .ipsw and .xip files |
-| [`midden`](https://github.com/starhaven-io/midden) | Resolve, audit, visualize, and clean coding-agent context and state |
-| [`pinprick`](https://github.com/starhaven-io/pinprick) | GitHub Actions supply chain security tool |
+| Cask | Platforms | Description |
+| --- | --- | --- |
+| [`brewy`](https://github.com/starhaven-io/Brewy) | macOS 15+ (Apple silicon) | Simple Homebrew GUI |
+| [`macosdb`](https://github.com/starhaven-io/macOSdb) | macOS 15+ (Apple silicon) | Catalog of open-source components from .ipsw and .xip files |
+| [`midden`](https://github.com/starhaven-io/midden) | macOS (Apple silicon); Linux (ARM64, x86-64) | Resolve, audit, visualize, and clean coding-agent context and state |
+| [`pinprick`](https://github.com/starhaven-io/pinprick) | macOS (Apple silicon); Linux (ARM64, x86-64) | GitHub Actions supply chain security tool |
 
 <!-- fleet:block license-section -->
 

@@ -1,0 +1,83 @@
+name: Publisher Cask Policy
+
+on:
+  # The verifier stays on the base SHA and treats the proposed commit as data.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+
+concurrency:
+  group: "publisher-cask-policy-${{ github.event.pull_request.number }}"
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  verify:
+    name: Verify publisher cask
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      attestations: read # required to verify release attestations
+      contents: read # required to read release, tag, and asset metadata
+    steps:
+      - name: Reject unexpected publisher branch
+        if: >-
+          (
+            github.event.pull_request.user.id == 274951094 ||
+            github.actor_id == '274951094'
+          ) &&
+          !startsWith(github.event.pull_request.head.ref, 'bump-')
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          case "${HEAD_REF}" in
+            fleet-sync-*) ;;
+            *)
+              echo "::error::Publisher pull requests must use a reserved branch namespace."
+              exit 1
+              ;;
+          esac
+
+      - name: Accept ordinary or fleet-sync change
+        if: ${{ !startsWith(github.event.pull_request.head.ref, 'bump-') }}
+        run: echo "Strict publisher cask policy is not required for this pull request."
+
+      - name: Check out trusted policy
+        # pull_request_target keeps this workflow and verifier on the base branch;
+        # no file or executable from the proposed head is loaded.
+        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Fetch proposed commit as data
+        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git fetch --no-tags origin "${HEAD_SHA}"
+
+      - name: Set up Ruby
+        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+
+      - name: Verify publisher cask and release provenance
+        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REPOSITORY: ${{ github.repository }}
+        run: ruby scripts/publisher_cask_policy.rb
