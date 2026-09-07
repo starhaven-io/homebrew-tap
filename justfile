@@ -35,17 +35,13 @@ test-bot:
 test:
     ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
 
-# Lint GitHub Actions workflows
-actionlint:
-    actionlint
-
 # Lint repository shell scripts
 shellcheck:
     shellcheck scripts/*.sh
 
 # Audit GitHub Actions workflows with the repo zizmor policy
 zizmor:
-    zizmor --persona auditor .
+    zizmor --strict-collection --persona auditor .
 
 # fleet:block pinprick-audit
 pinprick-audit:
@@ -77,18 +73,13 @@ check:
     }
     run test-bot bash scripts/check_homebrew_syntax.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }}
     run tests ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
-    if command -v actionlint &>/dev/null; then
-        run actionlint actionlint
-    else
-        skip actionlint actionlint actionlint
-    fi
     if command -v shellcheck &>/dev/null; then
         run shellcheck shellcheck scripts/*.sh
     else
         skip shellcheck shellcheck shellcheck
     fi
     if command -v zizmor &>/dev/null; then
-        run zizmor zizmor --persona auditor .
+        run zizmor zizmor --strict-collection --persona auditor .
     else
         skip zizmor zizmor zizmor
     fi

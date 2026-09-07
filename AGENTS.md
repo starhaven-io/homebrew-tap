@@ -40,7 +40,7 @@ Before committing cask changes:
 
 Before committing workflow changes:
 
-- Run `zizmor --persona auditor .` when available.
+- Run `zizmor --strict-collection --persona auditor .` when available.
 - Run `pinprick audit .` when workflow permissions, action pins, or runner
   behavior changes.
 
