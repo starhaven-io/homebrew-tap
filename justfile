@@ -126,5 +126,5 @@ install-hooks:
 
 # fleet:block audit
 audit:
-    zizmor --persona auditor .github/workflows/
+    zizmor --strict-collection --persona auditor .github/workflows/
 # fleet:end
