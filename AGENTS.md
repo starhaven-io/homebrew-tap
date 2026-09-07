@@ -1,9 +1,9 @@
 # Agent Instructions for starhaven-io/homebrew-tap
 
 Most importantly, run the narrowest relevant Homebrew verification before
-finishing any change. For cask edits, start with
-`brew audit --online --strict starhaven-io/tap/<token>`; for
-repository-wide syntax changes, run `brew test-bot --tap starhaven-io/tap --only-tap-syntax`.
+finishing any change. For cask edits, start with `just audit-cask <token>`;
+for repository-wide syntax changes, run `just test-bot`. These recipes verify
+that Homebrew resolves the checkout being edited.
 
 ## Project overview
 
@@ -14,7 +14,7 @@ Unlike Homebrew/brew, this repository does not vendor its own `brew` command.
 Use the active Homebrew installation on `PATH` unless the task specifically
 requires another Homebrew checkout.
 
-Current Homebrew audits casks by token rather than by local file path. Before
+Homebrew audits casks by token rather than by local file path. Before
 trusting token-based checks, verify that `brew --repo starhaven-io/tap` points at
 the checkout you are editing; otherwise the command audits the installed tap
 checkout, not this working tree.
@@ -30,15 +30,13 @@ resolves to this checkout.
 
 Before committing cask changes:
 
-- Run `brew audit --online --strict starhaven-io/tap/<token>` for each
-  changed cask.
-- Run `brew fetch --retry --force starhaven-io/tap/<token>` when a URL,
-  version, or checksum changes.
+- Run `just audit-cask <token>` for each changed cask.
+- Run `just fetch <token>` when a URL, version, or checksum changes.
 - Run `brew install Casks/<token>.rb` when the artifact layout,
   `app`, `binary`, completions, dependencies, or `zap` behavior changes.
 - Run `brew uninstall --force --zap Casks/<token>.rb` after install
   tests when the cask includes `zap` entries.
-- Run `brew test-bot --only-tap-syntax` for repository-wide syntax coverage.
+- Run `just test-bot` for repository-wide syntax coverage.
 
 Before committing workflow changes:
 
@@ -106,8 +104,9 @@ Bot-authored pull requests outside those lowercase namespaces fail closed.
 
 ### Workflow guidelines
 
-1. Pin third-party GitHub Actions to full commit SHAs. Keep the upstream version
-   comment next to the pin when practical.
+1. Pin third-party GitHub Actions to full commit SHAs with an adjacent version
+   comment. For `Homebrew/actions/*`, keep the published CalVer tag in that
+   comment.
 2. Use least-privilege `permissions`; prefer top-level `permissions: {}` plus
    job-level grants.
 3. Use `persist-credentials: false` for checkout steps unless a later step must
@@ -119,16 +118,6 @@ Bot-authored pull requests outside those lowercase namespaces fail closed.
 6. Leave a short explanatory comment immediately above each `shellcheck disable`.
 7. Keep security scanning workflows useful on pull requests and pushes to
    `main`.
-
-## Safety / do-not-touch rules
-
-1. Keep this tap cask-only. Do not add Formula files or formula-specific
-   workflows.
-2. Do not use mutable cask URLs, `latest` release URLs, or `sha256 :no_check`.
-3. Before trusting token-based Homebrew checks, verify that
-   `brew --repo starhaven-io/tap` points at the checkout you are editing.
-4. Pin `Homebrew/actions/*` to a full commit SHA and keep the published CalVer
-   tag in the adjacent version comment.
 
 <!-- fleet:block commit-and-pr-conventions -->
 
