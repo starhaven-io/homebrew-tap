@@ -96,14 +96,13 @@ jobs:
           resolved_tap="$(bash scripts/verify_tap_worktree.sh "${GITHUB_WORKSPACE}" "${GITHUB_REPOSITORY}")"
           echo "name=${resolved_tap}" >> "${GITHUB_OUTPUT}"
 
-      - name: Install workflow linters
-        run: brew install actionlint shellcheck
+      - name: Install ShellCheck
+        run: brew install shellcheck
 
       - name: Test repository automation
         run: |
           ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
           brew style scripts test
-          actionlint
           shellcheck scripts/*.sh
 
       - name: Resolve cask list

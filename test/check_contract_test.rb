@@ -11,7 +11,7 @@ class CheckContractTest < Minitest::Test
 
     refute_nil recipe
     assert_includes recipe, "run test-bot bash scripts/check_homebrew_syntax.sh"
-    assert_includes recipe, "run zizmor zizmor --persona auditor ."
+    assert_includes recipe, "run zizmor zizmor --strict-collection --persona auditor ."
     refute_includes recipe, "run zizmor zizmor ."
     refute_includes recipe, "test-bot skipped"
   end
