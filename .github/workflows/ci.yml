@@ -40,7 +40,7 @@ jobs:
     name: Links
     permissions:
       contents: read
-    uses: starhaven-io/.github/.github/workflows/reusable-link-check.yml@e17226c2acb631c8d5887bbff354db21887bed8b # v2026.09.06.3
+    uses: starhaven-io/.github/.github/workflows/reusable-link-check.yml@fa61548f8fe7ee08b5b939bfbec5900c6c54306d # v2026.09.06.4
     with:
       args: "--config lychee.toml README.md"
       build-site: false
@@ -51,7 +51,7 @@ jobs:
     name: Workflow supply-chain audit
     permissions:
       contents: read
-    uses: starhaven-io/.github/.github/workflows/reusable-pinprick-audit.yml@e17226c2acb631c8d5887bbff354db21887bed8b # v2026.09.06.3
+    uses: starhaven-io/.github/.github/workflows/reusable-pinprick-audit.yml@fa61548f8fe7ee08b5b939bfbec5900c6c54306d # v2026.09.06.4
     with:
       advanced-security: false
       fail-on-findings: true
@@ -60,7 +60,7 @@ jobs:
     name: Workflow security audit
     permissions:
       contents: read
-    uses: starhaven-io/.github/.github/workflows/reusable-zizmor.yml@e17226c2acb631c8d5887bbff354db21887bed8b # v2026.09.06.3
+    uses: starhaven-io/.github/.github/workflows/reusable-zizmor.yml@fa61548f8fe7ee08b5b939bfbec5900c6c54306d # v2026.09.06.4
     with:
       advanced-security: false
 
