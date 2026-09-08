@@ -31,7 +31,51 @@ class CaskMatrixTest < Minitest::Test
     )
   end
 
-  def test_linux_runner_is_derived_from_cask_source
+  def test_linux_runner_is_derived_from_platform_checksum
+    Dir.mktmpdir("cask-matrix-") do |root|
+      FileUtils.mkdir_p(File.join(root, "Casks"))
+      File.write(
+        File.join(root, "Casks", "example.rb"),
+        "cask \"example\" do\n  sha256 arm: \"#{"a" * 64}\",\n         x86_64_linux: \"#{"b" * 64}\"\nend\n",
+      )
+
+      assert_equal(
+        {
+          include: [
+            { cask: "example", runner: "macos-26" },
+            { cask: "example", runner: "ubuntu-24.04" },
+          ],
+        },
+        CaskMatrix.build(["example"], root: root),
+      )
+    end
+  end
+
+  def test_linux_runner_is_derived_from_single_line_platform_checksum
+    Dir.mktmpdir("cask-matrix-") do |root|
+      FileUtils.mkdir_p(File.join(root, "Casks"))
+      File.write(
+        File.join(root, "Casks", "example.rb"),
+        "cask \"example\" do\n  " \
+        "sha256 arm: \"#{"a" * 64}\", " \
+        "arm64_linux: \"#{"b" * 64}\", " \
+        "x86_64_linux: \"#{"c" * 64}\"\n" \
+        "end\n",
+      )
+
+      assert_equal(
+        {
+          include: [
+            { cask: "example", runner: "macos-26" },
+            { cask: "example", runner: "ubuntu-24.04" },
+          ],
+        },
+        CaskMatrix.build(["example"], root: root),
+      )
+    end
+  end
+
+  def test_linux_runner_still_accepts_an_on_linux_block
     Dir.mktmpdir("cask-matrix-") do |root|
       FileUtils.mkdir_p(File.join(root, "Casks"))
       File.write(File.join(root, "Casks", "example.rb"), "cask \"example\" do\n  on_linux do\n  end\nend\n")
