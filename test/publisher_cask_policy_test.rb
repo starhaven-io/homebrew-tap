@@ -85,6 +85,17 @@ class PublisherCaskPolicyTest < Minitest::Test
     assert_equal casks, PublisherCaskPolicy::PRODUCTS.keys.sort
   end
 
+  def test_publisher_parser_accepts_every_current_cask
+    repository_root = File.expand_path("..", __dir__)
+
+    PublisherCaskPolicy::PRODUCTS.each_key do |token|
+      source = File.binread(File.join(repository_root, "Casks", "#{token}.rb"))
+      parsed = PublisherCaskPolicy::SourceParser.new(source, token).parse
+
+      refute_empty parsed.fetch(:artifacts), token
+    end
+  end
+
   def test_verifies_established_publisher_title_and_release_provenance
     old_content = "old release"
     new_content = "new release"
@@ -136,6 +147,35 @@ class PublisherCaskPolicyTest < Minitest::Test
       ],
       plan.fetch("artifacts").map { |artifact| artifact.values_at("selector", "name", "sha256") },
     )
+  end
+
+  def test_rejects_legacy_nested_platform_checksums
+    source = legacy_platform_cask("pinprick", "1.0.0", "a" * 64, "b" * 64, "c" * 64)
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy::SourceParser.new(source, "pinprick").parse
+    end
+    assert_includes error.message, "unsupported sha256 stanza"
+  end
+
+  def test_rejects_platform_cask_without_macos_block
+    source = platform_cask("pinprick", "1.0.0", "a" * 64, "b" * 64, "c" * 64)
+             .sub("  on_macos do\n    depends_on arch: :arm64\n  end\n\n", "")
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy::SourceParser.new(source, "pinprick").parse
+    end
+    assert_includes error.message, "requires an on_macos block"
+  end
+
+  def test_rejects_platform_cask_without_macos_arm64_constraint
+    source = platform_cask("pinprick", "1.0.0", "a" * 64, "b" * 64, "c" * 64)
+             .sub("    depends_on arch: :arm64\n", "")
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy::SourceParser.new(source, "pinprick").parse
+    end
+    assert_includes error.message, "requires an arm64 constraint"
   end
 
   def test_rejects_cask_code_or_url_changes
@@ -300,6 +340,31 @@ class PublisherCaskPolicyTest < Minitest::Test
   end
 
   def platform_cask(token, version, macos_sha, linux_arm_sha, linux_intel_sha)
+    <<~RUBY
+      cask "#{token}" do
+        arch arm: "aarch64", intel: "x86_64"
+        os macos: "apple-darwin", linux: "unknown-linux-gnu"
+
+        version "#{version}"
+        sha256 arm:          "#{macos_sha}",
+               arm64_linux:  "#{linux_arm_sha}",
+               x86_64_linux: "#{linux_intel_sha}"
+
+        on_macos do
+          depends_on arch: :arm64
+        end
+
+        url "https://github.com/starhaven-io/#{token}/releases/download/v\#{version}/#{token}-\#{version}-\#{arch}-\#{os}.tar.gz"
+        name "#{token}"
+        desc "Test cask"
+        homepage "https://github.com/starhaven-io/#{token}"
+
+        binary "#{token}"
+      end
+    RUBY
+  end
+
+  def legacy_platform_cask(token, version, macos_sha, linux_arm_sha, linux_intel_sha)
     <<~RUBY
       cask "#{token}" do
         arch arm: "aarch64", intel: "x86_64"

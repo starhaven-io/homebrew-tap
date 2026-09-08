@@ -6,6 +6,8 @@ require "json"
 # Derives CI runners from validated cask source files.
 module CaskMatrix
   TOKEN_PATTERN = /\A[a-z0-9][a-z0-9_.+-]*\z/
+  LINUX_CHECKSUM_PATTERN = /^(?:[ \t]*sha256[^\n#]*?|[ \t]+)(?:arm64_linux|x86_64_linux):/
+  LINUX_BLOCK_PATTERN = /^[ \t]*on_linux[ \t]+do\b/
   MACOS_RUNNER = "macos-26"
   LINUX_RUNNER = "ubuntu-24.04"
 
@@ -19,8 +21,10 @@ module CaskMatrix
       path = File.join(root, "Casks", "#{token}.rb")
       validate_path!(path, token)
 
+      source = File.read(path, encoding: "UTF-8")
+      linux_supported = source.match?(LINUX_CHECKSUM_PATTERN) || source.match?(LINUX_BLOCK_PATTERN)
       runners = [MACOS_RUNNER]
-      runners << LINUX_RUNNER if File.read(path, encoding: "UTF-8").match?(/^\s*on_linux\s+do\b/)
+      runners << LINUX_RUNNER if linux_supported
       runners.map { |runner| { cask: token, runner: runner } }
     end
 

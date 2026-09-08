@@ -37,9 +37,10 @@ module PublisherCaskPolicy
       '(?:\n[ \t]+verified:[ \t]+"(?<verified>[^"\r\n]+)"[ \t]*)?$',
     ).freeze
     PLAIN_SHA_PATTERN = /^[ \t]*sha256[ \t]+"(?<digest>#{SHA256_PATTERN})"[ \t]*$/
-    KEYED_SHA_PATTERN = Regexp.new(
-      "^[ \\t]*sha256[ \\t]+arm64_linux:[ \\t]+\"(?<arm64>#{SHA256_PATTERN})\",[ \\t]*\\n" \
-      "[ \\t]+x86_64_linux:[ \\t]+\"(?<x86_64>#{SHA256_PATTERN})\"[ \\t]*$",
+    PLATFORM_SHA_PATTERN = Regexp.new(
+      "^  sha256[ \\t]+arm:[ \\t]+\"(?<macos_arm64>#{SHA256_PATTERN})\",[ \\t]*\\n" \
+      "[ \\t]+arm64_linux:[ \\t]+\"(?<linux_arm64>#{SHA256_PATTERN})\",[ \\t]*\\n" \
+      "[ \\t]+x86_64_linux:[ \\t]+\"(?<linux_x86_64>#{SHA256_PATTERN})\"[ \\t]*$",
     ).freeze
     ARCH_PATTERN = /^  arch arm: "(?<arm>[^"]+)", intel: "(?<intel>[^"]+)"[ \t]*$/
     OS_PATTERN = /^  os macos: "(?<macos>[^"]+)", linux: "(?<linux>[^"]+)"[ \t]*$/
@@ -54,12 +55,12 @@ module PublisherCaskPolicy
       version_match = exactly_one_match(VERSION_PATTERN, "literal version")
       url_match = exactly_one_match(URL_PATTERN, "literal URL")
       plain_matches = scan_matches(PLAIN_SHA_PATTERN)
-      keyed_matches = scan_matches(KEYED_SHA_PATTERN)
-      validate_sha_matches!(plain_matches, keyed_matches)
+      platform_matches = scan_matches(PLATFORM_SHA_PATTERN)
+      validate_sha_matches!(plain_matches, platform_matches)
 
-      normalized = normalize(version_match, plain_matches, keyed_matches)
+      normalized = normalize(version_match, plain_matches, platform_matches)
       url_details = parse_url(url_match)
-      bindings = build_bindings(url_details.fetch(:asset_template), plain_matches, keyed_matches)
+      bindings = build_bindings(url_details.fetch(:asset_template), plain_matches, platform_matches)
 
       {
         version:    version_match[:value],
@@ -97,22 +98,23 @@ module PublisherCaskPolicy
       @source.enum_for(:scan, pattern).map { Regexp.last_match.dup }
     end
 
-    def validate_sha_matches!(plain_matches, keyed_matches)
-      parsed_stanzas = plain_matches.length + keyed_matches.length
+    def validate_sha_matches!(plain_matches, platform_matches)
+      parsed_stanzas = plain_matches.length + platform_matches.length
       source_stanzas = @source.scan(/^[ \t]*sha256\b/).length
       return if parsed_stanzas.positive? && parsed_stanzas == source_stanzas
 
       raise PolicyError, "Cask source contains an unsupported sha256 stanza: #{@token}"
     end
 
-    def normalize(version_match, plain_matches, keyed_matches)
+    def normalize(version_match, plain_matches, platform_matches)
       replacements = [[version_match.begin(:value), version_match.end(:value), "<VERSION>"]]
       plain_matches.each do |match|
         replacements << [match.begin(:digest), match.end(:digest), "<SHA256>"]
       end
-      keyed_matches.each do |match|
-        replacements << [match.begin(:arm64), match.end(:arm64), "<SHA256>"]
-        replacements << [match.begin(:x86_64), match.end(:x86_64), "<SHA256>"]
+      platform_matches.each do |match|
+        replacements << [match.begin(:macos_arm64), match.end(:macos_arm64), "<SHA256>"]
+        replacements << [match.begin(:linux_arm64), match.end(:linux_arm64), "<SHA256>"]
+        replacements << [match.begin(:linux_x86_64), match.end(:linux_x86_64), "<SHA256>"]
       end
 
       normalized = @source.dup
@@ -152,21 +154,21 @@ module PublisherCaskPolicy
       }
     end
 
-    def build_bindings(asset_template, plain_matches, keyed_matches)
+    def build_bindings(asset_template, plain_matches, platform_matches)
       placeholders = asset_template.scan(/#\{([^}]+)\}/).flatten
       if placeholders == ["version"]
-        return build_single_binding(asset_template, plain_matches, keyed_matches)
+        return build_single_binding(asset_template, plain_matches, platform_matches)
       end
 
       if placeholders.sort != %w[arch os version]
         raise PolicyError, "Cask release asset placeholders are unsupported: #{@token}"
       end
 
-      build_platform_bindings(asset_template, plain_matches, keyed_matches)
+      build_platform_bindings(asset_template, plain_matches, platform_matches)
     end
 
-    def build_single_binding(asset_template, plain_matches, keyed_matches)
-      single_checksum = plain_matches.length == 1 && keyed_matches.empty? &&
+    def build_single_binding(asset_template, plain_matches, platform_matches)
+      single_checksum = plain_matches.length == 1 && platform_matches.empty? &&
                         block_range("on_macos").nil? && block_range("on_linux").nil?
       unless single_checksum
         raise PolicyError, "Single-asset cask must have one top-level checksum: #{@token}"
@@ -181,20 +183,16 @@ module PublisherCaskPolicy
       ]
     end
 
-    def build_platform_bindings(asset_template, plain_matches, keyed_matches)
+    def build_platform_bindings(asset_template, plain_matches, platform_matches)
       arch = exactly_one_match(ARCH_PATTERN, "literal arch mapping")
       os = exactly_one_match(OS_PATTERN, "literal OS mapping")
       macos_range = block_range("on_macos")
-      linux_range = block_range("on_linux")
-      if macos_range.nil? || linux_range.nil?
-        raise PolicyError,
-              "Platform cask requires on_macos and on_linux blocks: #{@token}"
+      if macos_range.nil?
+        raise PolicyError, "Platform cask requires an on_macos block: #{@token}"
       end
 
-      macos_sha = plain_matches.select { |match| range_covers?(macos_range, match.begin(0)) }
-      linux_sha = keyed_matches.select { |match| range_covers?(linux_range, match.begin(0)) }
-      if macos_sha.length != 1 || linux_sha.length != 1 || plain_matches.length != 1 || keyed_matches.length != 1
-        raise PolicyError, "Platform checksums are not bound to their OS blocks: #{@token}"
+      if plain_matches.any? || platform_matches.length != 1
+        raise PolicyError, "Platform cask must have one top-level checksum: #{@token}"
       end
 
       macos_body = @source[macos_range]
@@ -202,11 +200,12 @@ module PublisherCaskPolicy
         raise PolicyError, "macOS checksum requires an arm64 constraint: #{@token}"
       end
 
+      platform_sha = platform_matches.first
       values = {
         version:      version_value,
-        macos_arm64:  { arch: arch[:arm], os: os[:macos], sha256: macos_sha.first[:digest] },
-        linux_arm64:  { arch: arch[:arm], os: os[:linux], sha256: linux_sha.first[:arm64] },
-        linux_x86_64: { arch: arch[:intel], os: os[:linux], sha256: linux_sha.first[:x86_64] },
+        macos_arm64:  { arch: arch[:arm], os: os[:macos], sha256: platform_sha[:macos_arm64] },
+        linux_arm64:  { arch: arch[:arm], os: os[:linux], sha256: platform_sha[:linux_arm64] },
+        linux_x86_64: { arch: arch[:intel], os: os[:linux], sha256: platform_sha[:linux_x86_64] },
       }
       artifacts = [:macos_arm64, :linux_arm64, :linux_x86_64].map do |selector|
         platform = values.fetch(selector)
@@ -253,10 +252,6 @@ module PublisherCaskPolicy
       body_start = offsets.fetch(start_index) + lines.fetch(start_index).length
       body_end = offsets.fetch(end_index)
       body_start...body_end
-    end
-
-    def range_covers?(range, offset)
-      offset >= range.begin && offset < range.end
     end
 
     def render(template, values)
