@@ -1,6 +1,6 @@
 cask "macosdb" do
-  version "2.4.0"
-  sha256 "42b5064228016494723eec8cc3d40c37b6a6831dcf0b464f9a43ce5af69b2dca"
+  version "2.4.1"
+  sha256 "95b6a5bf219e6a0cc3e2b77252d8a23042ddb3d89fe5ec05d0fa8bca62298ede"
 
   url "https://github.com/starhaven-io/macOSdb/releases/download/#{version}/macosdb-#{version}-aarch64-apple-darwin.tar.gz"
   name "macOSdb"
