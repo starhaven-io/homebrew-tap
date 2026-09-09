@@ -2,10 +2,10 @@ cask "pinprick" do
   arch arm: "aarch64", intel: "x86_64"
   os macos: "apple-darwin", linux: "unknown-linux-gnu"
 
-  version "0.23.1"
-  sha256 arm:          "60699a1356438d1b4e66da9d5ffdedf5fdd0f74e033044cf2faf25518e07118b",
-         arm64_linux:  "2c8b1eedac453f23af79762719d442750b32859ebb3e463df4ab035aa844bbfb",
-         x86_64_linux: "f3c4f51423c521c8b1f34588f3d2d228b0604497a9e4c09eab438acc12b558ee"
+  version "0.24.0"
+  sha256 arm:          "8fa50ec62422ab78af544dfda66b2199015979a9994b2e407034c0bc48889194",
+         arm64_linux:  "2bf15346933f096a6539169d634b0c2f36a4ce9f286bb4878a20153e0ea48969",
+         x86_64_linux: "a869f87a06aadc16b96d73a2aa5965a5cfbdd24f6b7905eca6ea1e9b2ca0b1b7"
 
   on_macos do
     depends_on arch: :arm64
