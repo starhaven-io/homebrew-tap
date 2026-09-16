@@ -99,6 +99,9 @@ jobs:
       - name: Install ShellCheck
         run: brew install shellcheck
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@bec3f19a76460dbe12f60def7d1a77585f07516c # v1.322.0
+
       - name: Test repository automation
         run: |
           ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
