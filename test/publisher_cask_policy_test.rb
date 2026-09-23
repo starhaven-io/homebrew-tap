@@ -120,7 +120,7 @@ class PublisherCaskPolicyTest < Minitest::Test
     plan = build_plan(base, head, "brewy", "1.1.0")
     client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0.zip" => new_content })
 
-    result = PublisherCaskPolicy.verify_pr!(
+    result = PublisherCaskPolicy.verify!(
       root:   @root,
       env:    publisher_environment(base, head, "brewy", "1.1.0"),
       client: client,
@@ -397,7 +397,84 @@ class PublisherCaskPolicyTest < Minitest::Test
     assert_includes error.message, "unexpectedly large"
   end
 
+  def test_fleet_sync_may_not_change_publisher_owned_paths
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+
+    {
+      "Casks/brewy.rb"                              => simple_cask("brewy", "Brewy", "1.0.0", "b" * 64),
+      "scripts/publisher_cask_policy.rb"            => "# weakened\n",
+      "test/publisher_cask_policy_test.rb"          => "# removed\n",
+      ".ruby-version"                               => "4.0.7\n",
+      ".github/workflows/publisher-cask-policy.yml" => "name: weakened\n",
+    }.each do |path, content|
+      git("reset", "--quiet", "--hard", base)
+      head = commit_files(path => content)
+
+      error = assert_raises(PublisherCaskPolicy::PolicyError, path) do
+        PublisherCaskPolicy.verify!(root: @root, env: fleet_sync_environment(base, head))
+      end
+      assert_includes error.message, path
+    end
+  end
+
+  def test_fleet_sync_may_not_move_a_cask_out_of_the_tap
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("mv", "Casks/brewy.rb", "brewy.rb")
+    git("commit", "--quiet", "-m", "move cask")
+    head = git("rev-parse", "HEAD").strip
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy.verify!(root: @root, env: fleet_sync_environment(base, head))
+    end
+    assert_includes error.message, "Casks/brewy.rb"
+  end
+
+  def test_fleet_sync_may_change_shared_tooling
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    head = commit_files(
+      ".github/workflows/ci.yml" => "name: CI\n",
+      ".githooks/pre-push"       => "#!/bin/sh\n",
+      "justfile"                 => "check:\n",
+    )
+
+    result = PublisherCaskPolicy.verify!(root: @root, env: fleet_sync_environment(base, head))
+
+    assert_equal(
+      [".githooks/pre-push", ".github/workflows/ci.yml", "justfile"],
+      result.fetch("fleet_sync").fetch("paths").sort,
+    )
+  end
+
+  def test_rejects_branches_outside_the_reserved_namespaces
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", "b" * 64))
+
+    ["feature/bump-brewy-1.1.0", "Bump-brewy-1.1.0", "FLEET-SYNC-v2026.09.23.1"].each do |head_ref|
+      environment = publisher_environment(base, head, "brewy", "1.1.0").merge("HEAD_REF" => head_ref)
+
+      error = assert_raises(PublisherCaskPolicy::PolicyError, head_ref) do
+        PublisherCaskPolicy.verify!(root: @root, env: environment, client: Object.new)
+      end
+      assert_includes error.message, "outside the reserved publisher namespaces"
+    end
+  end
+
   private
+
+  def commit_files(files)
+    files.each do |path, content|
+      absolute_path = File.join(@root, path)
+      FileUtils.mkdir_p(File.dirname(absolute_path))
+      File.write(absolute_path, content)
+      git("add", path)
+    end
+    git("commit", "--quiet", "-m", "fleet sync")
+    git("rev-parse", "HEAD").strip
+  end
+
+  def fleet_sync_environment(base, head)
+    { "BASE_SHA" => base, "HEAD_SHA" => head, "HEAD_REF" => "fleet-sync-v2026.09.23.1" }
+  end
 
   def simple_cask(token, product, version, sha256)
     <<~RUBY

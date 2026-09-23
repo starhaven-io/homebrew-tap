@@ -44,14 +44,18 @@ jobs:
               ;;
           esac
 
-      - name: Accept ordinary or fleet-sync change
-        if: ${{ !startsWith(github.event.pull_request.head.ref, 'bump-') }}
-        run: echo "Strict publisher cask policy is not required for this pull request."
+      - name: Accept ordinary change
+        if: >-
+          !startsWith(github.event.pull_request.head.ref, 'bump-') &&
+          !startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
+        run: echo "Publisher cask policy is not required for this pull request."
 
       - name: Check out trusted policy
         # pull_request_target keeps this workflow and verifier on the base branch;
         # no file or executable from the proposed head is loaded.
-        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+        if: >-
+          startsWith(github.event.pull_request.head.ref, 'bump-') ||
+          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -59,17 +63,23 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Fetch proposed commit as data
-        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+        if: >-
+          startsWith(github.event.pull_request.head.ref, 'bump-') ||
+          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: git fetch --no-tags origin "${HEAD_SHA}"
 
       - name: Set up Ruby
-        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+        if: >-
+          startsWith(github.event.pull_request.head.ref, 'bump-') ||
+          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
         uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1.325.0
 
-      - name: Verify publisher cask and release provenance
-        if: startsWith(github.event.pull_request.head.ref, 'bump-')
+      - name: Verify reserved publisher branch
+        if: >-
+          startsWith(github.event.pull_request.head.ref, 'bump-') ||
+          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
