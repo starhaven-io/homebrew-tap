@@ -65,6 +65,22 @@ class PublisherCaskPolicyTest < Minitest::Test
     end
   end
 
+  class RecordingGitHubClient < PublisherCaskPolicy::GitHubClient
+    attr_reader :commands
+
+    def initialize
+      super
+      @commands = []
+    end
+
+    private
+
+    def run!(*command)
+      @commands << command
+      ""
+    end
+  end
+
   def setup
     @root = Dir.mktmpdir("publisher-cask-policy-")
     FileUtils.mkdir_p(File.join(@root, "Casks"))
@@ -255,21 +271,81 @@ class PublisherCaskPolicyTest < Minitest::Test
     assert_includes error.message, "attestation rejected"
   end
 
+  def test_attestation_binds_release_workflow_main_tag_commit_and_hosted_runners
+    client = RecordingGitHubClient.new
+    client.verify_attestation("/downloads/0-pinprick.tar.gz", "starhaven-io/pinprick", "1" * 40)
+
+    assert_equal(
+      [[
+        "gh", "attestation", "verify", "/downloads/0-pinprick.tar.gz",
+        "--repo", "starhaven-io/pinprick",
+        "--signer-workflow", "github.com/starhaven-io/pinprick/.github/workflows/release.yml",
+        "--source-ref", "refs/heads/main",
+        "--source-digest", "1" * 40,
+        "--deny-self-hosted-runners"
+      ]],
+      client.commands,
+    )
+  end
+
   def test_rejects_unpublished_or_prerelease_assets
     content = "stable release"
     base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
     head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", Digest::SHA256.hexdigest(content)))
     plan = build_plan(base, head, "brewy", "1.1.0")
-    client = FakeGitHubClient.new(
-      plan,
-      contents:        { "Brewy-1.1.0.zip" => content },
-      release_changes: { "draft" => true },
-    )
 
-    error = assert_raises(PublisherCaskPolicy::PolicyError) do
-      PublisherCaskPolicy::ReleaseVerifier.new(client: client).verify!(plan)
+    [{ "draft" => true }, { "prerelease" => true }, { "published_at" => nil }].each do |release_changes|
+      client = FakeGitHubClient.new(
+        plan,
+        contents:        { "Brewy-1.1.0.zip" => content },
+        release_changes: release_changes,
+      )
+
+      error = assert_raises(PublisherCaskPolicy::PolicyError, release_changes.inspect) do
+        PublisherCaskPolicy::ReleaseVerifier.new(client: client).verify!(plan)
+      end
+      assert_includes error.message, "published, stable"
     end
-    assert_includes error.message, "published, stable"
+  end
+
+  def test_rejects_asset_url_and_size_mismatches
+    content = "bound release"
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", Digest::SHA256.hexdigest(content)))
+    plan = build_plan(base, head, "brewy", "1.1.0")
+
+    {
+      "browser_download_url" => ["https://github.com/starhaven-io/Brewy/releases/download/1.1.0/Other.zip",
+                                 "Release download URL does not match"],
+      "size"                 => [content.bytesize + 1, "Downloaded size does not match"],
+    }.each do |field, (value, message)|
+      client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0.zip" => content })
+      client.release(plan.fetch("repository"), plan.fetch("tag")).fetch("assets").first[field] = value
+
+      error = assert_raises(PublisherCaskPolicy::PolicyError, field) do
+        PublisherCaskPolicy::ReleaseVerifier.new(client: client).verify!(plan)
+      end
+      assert_includes error.message, message
+    end
+  end
+
+  def test_rejects_pull_request_metadata_outside_the_publisher_contract
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", "b" * 64))
+
+    {
+      "REPOSITORY"      => ["attacker/homebrew-tap", "same-repository branch targeting main"],
+      "HEAD_REPOSITORY" => ["attacker/homebrew-tap", "same-repository branch targeting main"],
+      "BASE_REF"        => ["release", "same-repository branch targeting main"],
+      "HEAD_REF"        => ["bump-brewy-1.2.0", "branch, title, and cask path do not agree"],
+    }.each do |name, (value, message)|
+      environment = publisher_environment(base, head, "brewy", "1.1.0").merge(name => value)
+
+      error = assert_raises(PublisherCaskPolicy::PolicyError, name) do
+        PublisherCaskPolicy.verify_pr!(root: @root, env: environment, client: Object.new)
+      end
+      assert_includes error.message, message
+    end
   end
 
   def test_rejects_human_authored_reserved_bump_and_multi_file_change
