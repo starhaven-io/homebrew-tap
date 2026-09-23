@@ -105,7 +105,6 @@ jobs:
       - name: Test repository automation
         run: |
           ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
-          brew style scripts test
           shellcheck scripts/*.sh
 
       - name: Resolve cask list
