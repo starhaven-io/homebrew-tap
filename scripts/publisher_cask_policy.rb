@@ -445,7 +445,42 @@ module PublisherCaskPolicy
     return verify_pr!(root: root, env: env, client: client) if head_ref.start_with?("bump-")
     return verify_fleet_sync!(root: root, env: env) if head_ref.start_with?("fleet-sync-")
 
-    raise PolicyError, "Pull request branch is outside the reserved publisher namespaces: #{head_ref}"
+    bot_involved = %w[PR_AUTHOR_ID ACTOR_ID].any? do |name|
+      env.fetch(name) { raise PolicyError, "Missing environment variable: #{name}" } == BOT_USER_ID
+    end
+    raise PolicyError, "starhaven-bot pull requests must use a reserved branch namespace: #{head_ref}" if bot_involved
+
+    verify_release_updates!(root: root, env: env, client: client)
+  end
+
+  def verify_release_updates!(root: repository_root, env: ENV, client: GitHubClient.new)
+    base_sha, head_sha = %w[BASE_SHA HEAD_SHA].map do |name|
+      resolve_commit(root, env.fetch(name) { raise PolicyError, "Missing environment variable: #{name}" })
+    end
+    verifier = ReleaseVerifier.new(client: client)
+    releases = modified_cask_tokens(root, base_sha, head_sha).filter_map do |token|
+      plan = release_update_plan(root, base_sha, head_sha, token)
+      { "plan" => plan, "verification" => verifier.verify!(plan) } if plan
+    end
+
+    { "releases" => releases }
+  end
+
+  # Structural cask edits are reviewed as code. A pure version or checksum
+  # update must still point at a published, attested release, but may roll back.
+  def release_update_plan(root, base_sha, head_sha, token)
+    base_text = read_cask(root, base_sha, token)
+    head_text = read_cask(root, head_sha, token)
+    begin
+      base_source = SourceParser.new(base_text, token).parse
+      head_source = SourceParser.new(head_text, token).parse
+    rescue PolicyError
+      return
+    end
+    return if base_source.fetch(:normalized) != head_source.fetch(:normalized)
+
+    validate_version!(head_source.fetch(:version))
+    release_plan(token, head_source)
   end
 
   def verify_fleet_sync!(root: repository_root, env: ENV)
@@ -522,13 +557,17 @@ module PublisherCaskPolicy
       raise PolicyError, "Publisher cask repository changed"
     end
 
+    release_plan(token, head_source)
+  end
+
+  def release_plan(token, source)
     {
       "schema"     => 1,
       "cask"       => token,
-      "repository" => head_source.fetch(:repository),
-      "version"    => head_source.fetch(:version),
-      "tag"        => head_source.fetch(:tag),
-      "artifacts"  => head_source.fetch(:artifacts),
+      "repository" => source.fetch(:repository),
+      "version"    => source.fetch(:version),
+      "tag"        => source.fetch(:tag),
+      "artifacts"  => source.fetch(:artifacts),
     }
   end
 
@@ -570,6 +609,14 @@ module PublisherCaskPolicy
 
   def changed_paths(root, base_sha, head_sha)
     git(root, "diff", "--name-only", "--no-renames", "-z", "#{base_sha}...#{head_sha}").split("\0").reject(&:empty?)
+  end
+
+  def modified_cask_tokens(root, base_sha, head_sha)
+    fields = git(root, "diff", "--name-status", "--no-renames", "-z", "#{base_sha}...#{head_sha}").split("\0")
+    fields.each_slice(2).filter_map do |status, path|
+      token = path&.match(CASK_PATH_PATTERN)&.[](1)
+      token if status == "M" && PRODUCTS.key?(token)
+    end
   end
 
   def title_version(title, token)
