@@ -15,14 +15,14 @@ audit-cask token:
     ruby scripts/cask_matrix.rb "${token}" > /dev/null
     brew audit --cask --online --strict "${resolved_tap}/${token}"
 
-# Fetch a cask by token
+# Fetch every platform variation of a cask by token
 fetch token:
     #!/usr/bin/env bash
     set -euo pipefail
     token={{ quote(token) }}
     resolved_tap="$(bash scripts/verify_tap_worktree.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
     ruby scripts/cask_matrix.rb "${token}" > /dev/null
-    brew fetch --cask --retry --force "${resolved_tap}/${token}"
+    brew fetch --cask --retry --force --os=all --arch=all "${resolved_tap}/${token}"
 
 # Run repository-wide Homebrew syntax checks
 test-bot:
