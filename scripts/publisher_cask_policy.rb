@@ -26,6 +26,14 @@ module PublisherCaskPolicy
   ASSET_NAME_PATTERN = /\A[A-Za-z0-9][A-Za-z0-9._+-]*\z/
   VERSION_PLACEHOLDER = "\#{version}"
   MAX_CASK_BYTES = 64 * 1024
+  # Fleet sync owns shared tooling only; it must not change what users install or what gates publishing.
+  FLEET_SYNC_PROTECTED_PATHS = [
+    %r{\ACasks/}i,
+    %r{\Ascripts/}i,
+    %r{\Atest/}i,
+    /\A\.ruby-version\z/i,
+    %r{\A\.github/workflows/publisher-cask-policy\.yml\z}i,
+  ].freeze
 
   class PolicyError < StandardError; end
 
@@ -432,6 +440,27 @@ module PublisherCaskPolicy
 
   module_function
 
+  def verify!(root: repository_root, env: ENV, client: GitHubClient.new)
+    head_ref = env.fetch("HEAD_REF") { raise PolicyError, "Missing environment variable: HEAD_REF" }
+    return verify_pr!(root: root, env: env, client: client) if head_ref.start_with?("bump-")
+    return verify_fleet_sync!(root: root, env: env) if head_ref.start_with?("fleet-sync-")
+
+    raise PolicyError, "Pull request branch is outside the reserved publisher namespaces: #{head_ref}"
+  end
+
+  def verify_fleet_sync!(root: repository_root, env: ENV)
+    base_sha, head_sha = %w[BASE_SHA HEAD_SHA].map do |name|
+      resolve_commit(root, env.fetch(name) { raise PolicyError, "Missing environment variable: #{name}" })
+    end
+    paths = changed_paths(root, base_sha, head_sha)
+    protected_paths = paths.select { |path| FLEET_SYNC_PROTECTED_PATHS.any? { |pattern| path.match?(pattern) } }
+    unless protected_paths.empty?
+      raise PolicyError, "Fleet sync may not change publisher-owned paths: #{protected_paths.join(", ")}"
+    end
+
+    { "fleet_sync" => { "paths" => paths } }
+  end
+
   def verify_pr!(root: repository_root, env: ENV, client: GitHubClient.new)
     metadata = %w[BASE_REF BASE_SHA HEAD_REF HEAD_REPOSITORY HEAD_SHA PR_AUTHOR_ID PR_TITLE REPOSITORY].to_h do |name|
       [name, env.fetch(name) { raise PolicyError, "Missing environment variable: #{name}" }]
@@ -539,6 +568,10 @@ module PublisherCaskPolicy
     fields
   end
 
+  def changed_paths(root, base_sha, head_sha)
+    git(root, "diff", "--name-only", "--no-renames", "-z", "#{base_sha}...#{head_sha}").split("\0").reject(&:empty?)
+  end
+
   def title_version(title, token)
     prefixes = ["#{token} ", "chore(cask): update #{token} to "]
     prefix = prefixes.find { |candidate| title.start_with?(candidate) }
@@ -569,7 +602,7 @@ end
 
 if $PROGRAM_NAME == __FILE__
   begin
-    result = PublisherCaskPolicy.verify_pr!
+    result = PublisherCaskPolicy.verify!
     puts JSON.pretty_generate(result)
   rescue PublisherCaskPolicy::PolicyError, KeyError, JSON::ParserError => e
     warn "publisher_cask_policy: #{e.message}"

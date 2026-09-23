@@ -66,6 +66,8 @@ Keep `Verify publisher cask` as a separately required, main-targeted
 proposed cask blobs as data, and retain read-only permissions. The `bump-`
 and `fleet-sync-` branch prefixes are reserved for publisher automation.
 Bot-authored pull requests outside those lowercase namespaces fail closed.
+`fleet-sync-` pull requests may not change `Casks/`, `scripts/`, `test/`,
+`.ruby-version`, or the policy workflow; land such edits separately.
 
 ## Repository structure
 

@@ -32,7 +32,7 @@ class CiPolicyTest < Minitest::Test
 
   def test_policy_fetches_the_head_only_as_data_and_uses_the_local_verifier
     fetch = step("Fetch proposed commit as data")
-    verification = step("Verify publisher cask and release provenance")
+    verification = step("Verify reserved publisher branch")
 
     assert_equal "git fetch --no-tags origin \"${HEAD_SHA}\"", fetch.fetch("run")
     assert_equal "${{ github.event.pull_request.head.sha }}", fetch.fetch("env").fetch("HEAD_SHA")
@@ -51,10 +51,14 @@ class CiPolicyTest < Minitest::Test
   end
 
   def test_publisher_branch_routing_fails_closed_outside_reserved_namespaces
-    non_strict_steps = ["Reject unexpected publisher branch", "Accept ordinary or fleet-sync change"]
+    non_strict_steps = ["Reject unexpected publisher branch", "Accept ordinary change"]
     publisher_steps = @policy.fetch("steps").reject { |item| non_strict_steps.include?(item["name"]) }
     publisher_steps.each do |item|
-      assert_equal "startsWith(github.event.pull_request.head.ref, 'bump-')", item.fetch("if")
+      assert_equal(
+        "startsWith(github.event.pull_request.head.ref, 'bump-') || " \
+        "startsWith(github.event.pull_request.head.ref, 'fleet-sync-')",
+        item.fetch("if").gsub(/\s+/, " ").strip,
+      )
     end
 
     reject_condition = step("Reject unexpected publisher branch").fetch("if")
@@ -69,8 +73,12 @@ class CiPolicyTest < Minitest::Test
     assert_includes reject_step.fetch("run"), "fleet-sync-*)"
     assert_includes reject_step.fetch("run"), "exit 1"
 
-    accept_condition = step("Accept ordinary or fleet-sync change").fetch("if")
-    assert_equal "${{ !startsWith(github.event.pull_request.head.ref, 'bump-') }}", accept_condition
+    accept_condition = step("Accept ordinary change").fetch("if")
+    assert_equal(
+      "!startsWith(github.event.pull_request.head.ref, 'bump-') && " \
+      "!startsWith(github.event.pull_request.head.ref, 'fleet-sync-')",
+      accept_condition.gsub(/\s+/, " ").strip,
+    )
     assert_includes @source, "PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}"
   end
 
