@@ -71,7 +71,6 @@ jobs:
     permissions:
       contents: read
     outputs:
-      casks: ${{ steps.casks.outputs.casks }}
       install: ${{ steps.casks.outputs.install }}
       matrix: ${{ steps.casks.outputs.matrix }}
       run_casks: ${{ steps.casks.outputs.run_casks }}
@@ -142,18 +141,6 @@ jobs:
               tokens+=("${token}")
             done < "${cask_paths}"
           fi
-          if [[ "${#tokens[@]}" -gt 0 ]]; then
-            deduped=()
-            deduped_paths="${RUNNER_TEMP}/deduped-casks.txt"
-            if ! printf "%s\n" "${tokens[@]}" | sort -u > "${deduped_paths}"; then
-              echo "::error::Could not normalize selected casks"
-              exit 1
-            fi
-            while IFS= read -r token; do
-              deduped+=("${token}")
-            done < "${deduped_paths}"
-            tokens=("${deduped[@]}")
-          fi
 
           if [[ "${#tokens[@]}" -eq 0 && "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
             echo "::error::No casks selected"
@@ -162,7 +149,6 @@ jobs:
 
           if [[ "${#tokens[@]}" -eq 0 ]]; then
             {
-              echo "casks=[]"
               echo 'matrix={"include":[]}'
               echo "run_casks=false"
               echo "install=false"
@@ -174,11 +160,6 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             run_casks=false
           fi
-
-          {
-            printf "casks="
-            printf "%s\n" "${tokens[@]}" | jq -R . | jq -s -c .
-          } >> "${GITHUB_OUTPUT}"
 
           matrix_json="$(ruby scripts/cask_matrix.rb "${tokens[@]}")"
           echo "matrix=${matrix_json}" >> "${GITHUB_OUTPUT}"
