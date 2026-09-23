@@ -12,8 +12,7 @@ The official [Homebrew](https://brew.sh) tap for [starhaven.io](https://starhave
 ## Usage
 
 ```sh
-brew tap starhaven-io/tap
-brew install <cask-name>
+brew install --cask starhaven-io/tap/<cask-name>
 ```
 
 ## Casks
