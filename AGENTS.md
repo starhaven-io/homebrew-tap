@@ -67,7 +67,9 @@ proposed cask blobs as data, and retain read-only permissions. The `bump-`
 and `fleet-sync-` branch prefixes are reserved for publisher automation.
 Bot-authored pull requests outside those lowercase namespaces fail closed.
 `fleet-sync-` pull requests may not change `Casks/`, `scripts/`, `test/`,
-`.ruby-version`, or the policy workflow; land such edits separately.
+`.ruby-version`, or the policy workflow; land such edits separately. Any other
+pull request that changes only a cask's version or checksums must also point at
+a published, stable, attested release, though it may roll back.
 
 ## Repository structure
 

@@ -44,18 +44,9 @@ jobs:
               ;;
           esac
 
-      - name: Accept ordinary change
-        if: >-
-          !startsWith(github.event.pull_request.head.ref, 'bump-') &&
-          !startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
-        run: echo "Publisher cask policy is not required for this pull request."
-
       - name: Check out trusted policy
         # pull_request_target keeps this workflow and verifier on the base branch;
         # no file or executable from the proposed head is loaded.
-        if: >-
-          startsWith(github.event.pull_request.head.ref, 'bump-') ||
-          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -63,24 +54,16 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Fetch proposed commit as data
-        if: >-
-          startsWith(github.event.pull_request.head.ref, 'bump-') ||
-          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: git fetch --no-tags origin "${HEAD_SHA}"
 
       - name: Set up Ruby
-        if: >-
-          startsWith(github.event.pull_request.head.ref, 'bump-') ||
-          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
         uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
 
-      - name: Verify reserved publisher branch
-        if: >-
-          startsWith(github.event.pull_request.head.ref, 'bump-') ||
-          startsWith(github.event.pull_request.head.ref, 'fleet-sync-')
+      - name: Verify publisher policy
         env:
+          ACTOR_ID: ${{ github.actor_id }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GH_TOKEN: ${{ github.token }}

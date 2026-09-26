@@ -445,21 +445,88 @@ class PublisherCaskPolicyTest < Minitest::Test
     )
   end
 
-  def test_rejects_branches_outside_the_reserved_namespaces
+  def test_rejects_bot_pull_requests_outside_the_reserved_namespaces
     base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
-    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", "b" * 64))
+    head = commit_files("README.md" => "unrelated\n")
 
-    ["feature/bump-brewy-1.1.0", "Bump-brewy-1.1.0", "FLEET-SYNC-v2026.09.23.1"].each do |head_ref|
-      environment = publisher_environment(base, head, "brewy", "1.1.0").merge("HEAD_REF" => head_ref)
+    [
+      ["feature/tooling", PublisherCaskPolicy::BOT_USER_ID, "12345"],
+      ["Bump-brewy-1.1.0", PublisherCaskPolicy::BOT_USER_ID, PublisherCaskPolicy::BOT_USER_ID],
+      ["FLEET-SYNC-v2026.09.23.1", PublisherCaskPolicy::BOT_USER_ID, PublisherCaskPolicy::BOT_USER_ID],
+      ["chore/human-change", "12345", PublisherCaskPolicy::BOT_USER_ID],
+    ].each do |head_ref, author_id, actor_id|
+      environment = manual_environment(base, head).merge(
+        "HEAD_REF"     => head_ref,
+        "PR_AUTHOR_ID" => author_id,
+        "ACTOR_ID"     => actor_id,
+      )
 
       error = assert_raises(PublisherCaskPolicy::PolicyError, head_ref) do
         PublisherCaskPolicy.verify!(root: @root, env: environment, client: Object.new)
       end
-      assert_includes error.message, "outside the reserved publisher namespaces"
+      assert_includes error.message, "must use a reserved branch namespace"
+    end
+  end
+
+  def test_verifies_the_release_of_a_manual_version_update
+    content = "manual release"
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", Digest::SHA256.hexdigest(content)))
+    plan = PublisherCaskPolicy.release_update_plan(@root, base, head, "brewy")
+    client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0.zip" => content })
+
+    result = PublisherCaskPolicy.verify!(root: @root, env: manual_environment(base, head), client: client)
+
+    assert_equal [plan], result.fetch("releases").map { |release| release.fetch("plan") }
+    assert_equal [["0-Brewy-1.1.0.zip", "starhaven-io/Brewy", "1" * 40]], client.attestations
+
+    client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0.zip" => content }, fail_attestation: true)
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy.verify!(root: @root, env: manual_environment(base, head), client: client)
+    end
+    assert_includes error.message, "attestation rejected"
+  end
+
+  def test_verifies_a_manual_rollback_without_requiring_a_newer_version
+    content = "previous release"
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", "a" * 64))
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", Digest::SHA256.hexdigest(content)))
+    plan = PublisherCaskPolicy.release_update_plan(@root, base, head, "brewy")
+    client = FakeGitHubClient.new(plan, contents: { "Brewy-1.0.0.zip" => content })
+
+    result = PublisherCaskPolicy.verify!(root: @root, env: manual_environment(base, head), client: client)
+
+    assert_equal "1.0.0", result.fetch("releases").first.fetch("plan").fetch("version")
+    assert_equal 1, client.attestations.length
+  end
+
+  def test_manual_changes_without_a_pure_release_update_need_no_release
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    structural = simple_cask("brewy", "Brewy", "1.1.0", "b" * 64).sub("Test cask", "Changed description")
+
+    [
+      -> { commit_cask("brewy", structural) },
+      -> { commit_files("README.md" => "unrelated\n") },
+    ].each do |change|
+      git("reset", "--quiet", "--hard", base)
+      head = change.call
+      result = PublisherCaskPolicy.verify!(root: @root, env: manual_environment(base, head), client: Object.new)
+
+      assert_empty result.fetch("releases")
     end
   end
 
   private
+
+  def manual_environment(base, head)
+    {
+      "ACTOR_ID"     => "12345",
+      "BASE_SHA"     => base,
+      "HEAD_REF"     => "chore/brewy-update",
+      "HEAD_SHA"     => head,
+      "PR_AUTHOR_ID" => "12345",
+    }
+  end
 
   def commit_files(files)
     files.each do |path, content|
@@ -564,6 +631,7 @@ class PublisherCaskPolicyTest < Minitest::Test
 
   def publisher_environment(base, head, token, version)
     {
+      "ACTOR_ID"        => PublisherCaskPolicy::BOT_USER_ID,
       "BASE_REF"        => "main",
       "BASE_SHA"        => base,
       "HEAD_REF"        => "bump-#{token}-#{version}",
