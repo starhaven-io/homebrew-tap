@@ -40,7 +40,7 @@ Before committing cask changes:
 
 Before committing workflow changes:
 
-- Run `zizmor --strict-collection --persona auditor .` when available.
+- Run `zizmor --strict-collection --persona auditor .`.
 - Run `pinprick audit .` when workflow permissions, action pins, or runner
   behavior changes.
 
@@ -52,8 +52,8 @@ The repository test suite covers exact cask inventory/platform routing,
 invalid and symlinked cask inputs, local tap alias safety, and publisher update
 content and release provenance. Fleet's required commit-policy workflow and the
 managed local hook enforce DCO sign-offs. Run the repository tests with
-`just test`; `just check` adds Homebrew syntax and all available workflow,
-shell, supply-chain, and link linters.
+`just test`; `just check` adds Homebrew syntax and the workflow, shell,
+supply-chain, and link linters, and fails when any linter is not installed.
 
 The audit jobs in `ci.yml` provide the always-running pull-request aggregate
 consumed by `conclusion`. Fleet-rendered standalone audit/link workflows retain
