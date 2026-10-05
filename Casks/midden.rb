@@ -2,10 +2,10 @@ cask "midden" do
   arch arm: "aarch64", intel: "x86_64"
   os macos: "apple-darwin", linux: "unknown-linux-gnu"
 
-  version "0.9.2"
-  sha256 arm:          "d4286dc3e1dd3517f053a5aaba0865ed7c92c20cc5e082c2caa9bef1cc45d892",
-         arm64_linux:  "d3a48bd6dbb25ba9e2adf409cc2a125d7cd1a00531d388e4015ea55845db1bc8",
-         x86_64_linux: "ad82ed1ddb709bf753ae185bc5331ba4980eb453982bc22d60643978b6065e36"
+  version "0.9.3"
+  sha256 arm:          "0c553d099a79337726b0bcb17fde73d523a737f48732a7fe005724e1dfdbfc26",
+         arm64_linux:  "db1950e56fc665250e358ae6975e6574c1c7685de52c648ee6335e5ed639d1f7",
+         x86_64_linux: "491c7b873019a47f2c11853ad63c52bcc700b386d517e0ccc5ffc2342e70d6b3"
 
   on_macos do
     depends_on arch: :arm64
