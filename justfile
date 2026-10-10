@@ -11,7 +11,7 @@ audit-cask token:
     #!/usr/bin/env bash
     set -euo pipefail
     token={{ quote(token) }}
-    resolved_tap="$(bash scripts/verify_tap_worktree.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
+    resolved_tap="$(ruby scripts/verify_tap_worktree.rb {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
     ruby scripts/cask_matrix.rb "${token}" > /dev/null
     brew audit --cask --online --strict "${resolved_tap}/${token}"
 
@@ -20,24 +20,21 @@ fetch token:
     #!/usr/bin/env bash
     set -euo pipefail
     token={{ quote(token) }}
-    resolved_tap="$(bash scripts/verify_tap_worktree.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
+    resolved_tap="$(ruby scripts/verify_tap_worktree.rb {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
     ruby scripts/cask_matrix.rb "${token}" > /dev/null
     brew fetch --cask --retry --force --os=all --arch=all "${resolved_tap}/${token}"
 
 # Run repository-wide Homebrew syntax checks
 test-bot:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    resolved_tap="$(bash scripts/verify_tap_worktree.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }})"
-    brew test-bot --tap "${resolved_tap}" --only-tap-syntax
+    ruby scripts/check_homebrew_syntax.rb {{ quote(justfile_directory()) }} {{ quote(tap_name) }}
 
 # Test CI policy and cask platform routing
 test:
-    ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
+    bundle exec ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
 
-# Lint repository shell scripts
+# Lint shared Git hooks
 shellcheck:
-    shellcheck scripts/*.sh
+    shellcheck .githooks/*
 
 # Audit GitHub Actions workflows with the repo zizmor policy
 zizmor:
@@ -56,58 +53,17 @@ lychee:
 
 # Run all checks
 check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    failed=0
-    skipped=()
-    run() {
-        echo "--- $1 ---"
-        shift
-        if ! "$@"; then
-            failed=1
-        fi
-    }
-    skip() {
-        echo "--- $1 --- skipped ($2 not found)"
-        skipped+=("$2 (brew install $3)")
-    }
-    run test-bot bash scripts/check_homebrew_syntax.sh {{ quote(justfile_directory()) }} {{ quote(tap_name) }}
-    run tests ruby -e 'Dir["test/*_test.rb"].sort.each { |file| require File.expand_path(file) }'
-    if command -v shellcheck &>/dev/null; then
-        run shellcheck shellcheck scripts/*.sh
-    else
-        skip shellcheck shellcheck shellcheck
-    fi
-    if command -v zizmor &>/dev/null; then
-        run zizmor zizmor --strict-collection --persona auditor .
-    else
-        skip zizmor zizmor zizmor
-    fi
-    if command -v pinprick &>/dev/null; then
-        run pinprick-audit pinprick audit .
-    else
-        skip pinprick-audit pinprick pinprick
-    fi
-    if command -v lychee &>/dev/null; then
-        run lychee lychee --config lychee.toml README.md
-    else
-        skip lychee lychee lychee
-    fi
-    if [ ${#skipped[@]} -gt 0 ]; then
-        echo ""
-        echo "Checks skipped due to missing tools:"
-        for tool in "${skipped[@]}"; do
-            echo "  - $tool"
-        done
-        failed=1
-    fi
-    exit "$failed"
+    ruby scripts/check.rb
 
 # Setup
 
+# Install locked repository test dependencies
+setup:
+    bundle install
+
 # Link this checkout under a private tap alias for token-based Homebrew checks.
 link-tap alias="starhaven-worktree/tap":
-    bash scripts/link_tap_worktree.sh {{ quote(alias) }} {{ quote(justfile_directory()) }}
+    ruby scripts/link_tap_worktree.rb {{ quote(alias) }} {{ quote(justfile_directory()) }}
 
 # fleet:block install-hooks
 # Install git hooks (AI trailer guard + DCO sign-off + pre-push checks). Run once per clone.

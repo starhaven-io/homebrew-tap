@@ -7,3 +7,7 @@
 # fleet:end
 # Homebrew test-bot output
 steps_output.txt
+
+# Repository test dependencies
+.bundle/
+vendor/bundle/
