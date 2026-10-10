@@ -8,13 +8,13 @@ require "tmpdir"
 
 class TapWorktreeTest < Minitest::Test
   REPOSITORY_ROOT = File.expand_path("..", __dir__).freeze
-  LINKER = File.join(REPOSITORY_ROOT, "scripts", "link_tap_worktree.sh").freeze
-  VERIFIER = File.join(REPOSITORY_ROOT, "scripts", "verify_tap_worktree.sh").freeze
-  SYNTAX_CHECK = File.join(REPOSITORY_ROOT, "scripts", "check_homebrew_syntax.sh").freeze
+  LINKER = File.join(REPOSITORY_ROOT, "scripts", "link_tap_worktree.rb").freeze
+  VERIFIER = File.join(REPOSITORY_ROOT, "scripts", "verify_tap_worktree.rb").freeze
+  SYNTAX_CHECK = File.join(REPOSITORY_ROOT, "scripts", "check_homebrew_syntax.rb").freeze
 
   def setup
     @directory = Dir.mktmpdir("tap-worktree-")
-    @brew_repository = File.join(@directory, "homebrew")
+    @brew_repository = File.join(@directory, "homebréw[1]*? with spaces ")
     @bin = File.join(@directory, "bin")
     FileUtils.mkdir_p([@brew_repository, @bin])
     File.write(File.join(@bin, "brew"), <<~SH)
@@ -22,12 +22,12 @@ class TapWorktreeTest < Minitest::Test
       case "$1" in
         --repository) printf '%s\\n' "#{@brew_repository}" ;;
         --repo) printf '%s/Library/Taps/%s/homebrew-%s\\n' "#{@brew_repository}" "${2%/*}" "${2#*/}" ;;
-        test-bot) printf '%s\\n' "$*" ;;
+        test-bot) printf '%s\\n' "$*"; exit "${BREW_TEST_BOT_STATUS:-0}" ;;
         *) exit 64 ;;
       esac
     SH
     FileUtils.chmod(0755, File.join(@bin, "brew"))
-    @env = { "PATH" => "#{@bin}:#{ENV.fetch("PATH")}" }
+    @env = { "PATH" => "#{@bin}:#{ENV.fetch("PATH")}", "BREW_TEST_BOT_STATUS" => nil }
   end
 
   def teardown
@@ -37,17 +37,61 @@ class TapWorktreeTest < Minitest::Test
   def test_links_and_verifies_checkout_under_private_alias
     stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+      RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
     )
     assert status.success?, stderr
     assert_includes stdout, "HOMEBREW_TAP_NAME=starhaven-worktree/tap just check"
 
     stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", VERIFIER, REPOSITORY_ROOT, "starhaven-worktree/tap"
+      RbConfig.ruby, VERIFIER, REPOSITORY_ROOT, "starhaven-worktree/tap"
     )
     assert status.success?, stderr
     assert_equal "starhaven-worktree/tap", stdout.strip
+  end
+
+  def test_non_ascii_checkout_and_prefix_preserve_bytes_in_each_external_encoding
+    checkout = File.join(@directory, "chéckout")
+    FileUtils.mkdir_p(checkout)
+    environment = @env.merge("LANG" => nil, "LC_ALL" => "C", "LC_CTYPE" => nil)
+    requested_taps = %w[starhaven-worktree/tap starhaven-io/tap]
+    %w[UTF-8 US-ASCII ISO-8859-1].each do |encoding|
+      _stdout, stderr, status = Open3.capture3(
+        environment, RbConfig.ruby, "-E#{encoding}", LINKER, "starhaven-worktree/tap", checkout, binmode: true
+      )
+      assert status.success?, "#{encoding}: #{stderr}"
+
+      requested_taps.each do |requested|
+        stdout, stderr, status = Open3.capture3(
+          environment, RbConfig.ruby, "-E#{encoding}", VERIFIER, checkout, requested, binmode: true
+        )
+        assert status.success?, "#{encoding}: #{stderr}"
+        assert_equal "starhaven-worktree/tap", stdout.strip
+      end
+    end
+  end
+
+  def test_empty_optional_arguments_preserve_the_shell_defaults
+    [[], ["", ""]].each do |arguments|
+      _stdout, stderr, status = Open3.capture3(
+        @env, RbConfig.ruby, LINKER, *arguments, chdir: REPOSITORY_ROOT
+      )
+      assert status.success?, stderr
+
+      stdout, stderr, status = Open3.capture3(
+        @env, RbConfig.ruby, VERIFIER, *arguments, chdir: REPOSITORY_ROOT
+      )
+      assert status.success?, stderr
+      assert_equal "starhaven-worktree/tap", stdout.strip
+    end
+  end
+
+  def test_syntax_check_requires_nonempty_arguments
+    [[], ["", "starhaven-worktree/tap"], [REPOSITORY_ROOT, ""]].each do |arguments|
+      _stdout, stderr, status = Open3.capture3(@env, RbConfig.ruby, SYNTAX_CHECK, *arguments)
+      refute status.success?
+      assert_includes stderr, "usage: check_homebrew_syntax.rb CHECKOUT TAP_NAME"
+    end
   end
 
   def test_refuses_to_replace_an_existing_tap
@@ -56,7 +100,7 @@ class TapWorktreeTest < Minitest::Test
 
     _stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", LINKER, "existing/tap", REPOSITORY_ROOT
+      RbConfig.ruby, LINKER, "existing/tap", REPOSITORY_ROOT
     )
     refute status.success?
     assert_includes stderr, "refusing to replace existing path"
@@ -65,14 +109,14 @@ class TapWorktreeTest < Minitest::Test
   def test_rejects_invalid_aliases
     _stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", LINKER, "../tap", REPOSITORY_ROOT
+      RbConfig.ruby, LINKER, "../tap", REPOSITORY_ROOT
     )
     refute status.success?
     assert_includes stderr, "invalid tap name"
 
     _stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", VERIFIER, REPOSITORY_ROOT, "--help"
+      RbConfig.ruby, VERIFIER, REPOSITORY_ROOT, "--help"
     )
     refute status.success?
     assert_includes stderr, "invalid tap name"
@@ -82,7 +126,7 @@ class TapWorktreeTest < Minitest::Test
     canonical_path = File.join(@brew_repository, "Library/Taps/starhaven-io/homebrew-tap")
     _stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", LINKER, "starhaven-io/tap", REPOSITORY_ROOT
+      RbConfig.ruby, LINKER, "starhaven-io/tap", REPOSITORY_ROOT
     )
 
     refute status.success?
@@ -99,7 +143,7 @@ class TapWorktreeTest < Minitest::Test
 
     _stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", LINKER, "private/tap", REPOSITORY_ROOT
+      RbConfig.ruby, LINKER, "private/tap", REPOSITORY_ROOT
     )
 
     refute status.success?
@@ -112,13 +156,13 @@ class TapWorktreeTest < Minitest::Test
     FileUtils.mkdir_p(canonical_path)
     _stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+      RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
     )
     assert status.success?, stderr
 
     stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", VERIFIER, REPOSITORY_ROOT, "starhaven-io/tap"
+      RbConfig.ruby, VERIFIER, REPOSITORY_ROOT, "starhaven-io/tap"
     )
 
     assert status.success?, stderr
@@ -129,14 +173,14 @@ class TapWorktreeTest < Minitest::Test
     %w[starhaven-first/tap starhaven-second/tap].each do |tap_name|
       _stdout, stderr, status = Open3.capture3(
         @env,
-        "bash", LINKER, tap_name, REPOSITORY_ROOT
+        RbConfig.ruby, LINKER, tap_name, REPOSITORY_ROOT
       )
       assert status.success?, stderr
     end
 
     _stdout, stderr, status = Open3.capture3(
       @env,
-      "bash", VERIFIER, REPOSITORY_ROOT, "starhaven-io/tap"
+      RbConfig.ruby, VERIFIER, REPOSITORY_ROOT, "starhaven-io/tap"
     )
 
     refute status.success?
@@ -144,17 +188,39 @@ class TapWorktreeTest < Minitest::Test
     assert_includes stderr, "select one with HOMEBREW_TAP_NAME"
   end
 
+  def test_discovery_ignores_canonical_owner_aliases
+    canonical_path = File.join(@brew_repository, "Library/Taps/starhaven-io/homebrew-alias")
+    FileUtils.mkdir_p(File.dirname(canonical_path))
+    File.symlink(REPOSITORY_ROOT, canonical_path)
+
+    _stdout, stderr, status = Open3.capture3(
+      @env, RbConfig.ruby, VERIFIER, REPOSITORY_ROOT, "missing/tap"
+    )
+    refute status.success?
+    assert_includes stderr, "run 'just link-tap' before retrying"
+
+    _stdout, stderr, status = Open3.capture3(
+      @env, RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+    )
+    assert status.success?, stderr
+    stdout, stderr, status = Open3.capture3(
+      @env, RbConfig.ruby, VERIFIER, REPOSITORY_ROOT, "missing/tap"
+    )
+    assert status.success?, stderr
+    assert_equal "starhaven-worktree/tap", stdout.strip
+  end
+
   def test_ignores_broken_alias_when_discovering_the_checkout
     broken_path = File.join(@brew_repository, "Library/Taps/broken/homebrew-tap")
     FileUtils.mkdir_p(File.dirname(broken_path))
     File.symlink(File.join(@directory, "missing-checkout"), broken_path)
     _stdout, stderr, status = Open3.capture3(
-      @env, "bash", LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+      @env, RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
     )
     assert status.success?, stderr
 
     stdout, stderr, status = Open3.capture3(
-      @env, "bash", VERIFIER, REPOSITORY_ROOT, "starhaven-io/tap"
+      @env, RbConfig.ruby, VERIFIER, REPOSITORY_ROOT, "starhaven-io/tap"
     )
 
     assert status.success?, stderr
@@ -164,7 +230,7 @@ class TapWorktreeTest < Minitest::Test
   def test_syntax_check_fails_without_homebrew
     path = "/usr/bin:/bin"
     _stdout, stderr, status = Open3.capture3(
-      { "PATH" => path }, "bash", SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap"
+      { "PATH" => path }, RbConfig.ruby, SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap"
     )
 
     refute status.success?
@@ -173,7 +239,7 @@ class TapWorktreeTest < Minitest::Test
 
   def test_syntax_check_fails_when_tap_points_elsewhere
     _stdout, stderr, status = Open3.capture3(
-      @env, "bash", SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap"
+      @env, RbConfig.ruby, SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap"
     )
 
     refute status.success?
@@ -182,26 +248,55 @@ class TapWorktreeTest < Minitest::Test
 
   def test_syntax_check_runs_test_bot_for_linked_alias
     _stdout, stderr, status = Open3.capture3(
-      @env, "bash", LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+      @env, RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
     )
     assert status.success?, stderr
 
     _stdout, stderr, status = Open3.capture3(
-      @env, "bash", SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap"
+      @env, RbConfig.ruby, SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap"
     )
     assert status.success?, stderr
+  end
+
+  def test_syntax_check_ignores_extra_arguments
+    _stdout, stderr, status = Open3.capture3(
+      @env, RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+    )
+    assert status.success?, stderr
+
+    [["ignored"], ["", "--help"]].each do |extra_arguments|
+      stdout, stderr, status = Open3.capture3(
+        @env, RbConfig.ruby, SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap", *extra_arguments
+      )
+      assert status.success?, stderr
+      assert_equal "test-bot --tap starhaven-worktree/tap --only-tap-syntax\n", stdout
+    end
+  end
+
+  def test_syntax_check_preserves_test_bot_failure_status
+    _stdout, stderr, status = Open3.capture3(
+      @env, RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+    )
+    assert status.success?, stderr
+
+    stdout, _stderr, status = Open3.capture3(
+      @env.merge("BREW_TEST_BOT_STATUS" => "42"),
+      RbConfig.ruby, SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-worktree/tap"
+    )
+    assert_equal 42, status.exitstatus
+    assert_equal "test-bot --tap starhaven-worktree/tap --only-tap-syntax\n", stdout
   end
 
   def test_syntax_check_uses_discovered_private_alias
     canonical_path = File.join(@brew_repository, "Library/Taps/starhaven-io/homebrew-tap")
     FileUtils.mkdir_p(canonical_path)
     _stdout, stderr, status = Open3.capture3(
-      @env, "bash", LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
+      @env, RbConfig.ruby, LINKER, "starhaven-worktree/tap", REPOSITORY_ROOT
     )
     assert status.success?, stderr
 
     stdout, stderr, status = Open3.capture3(
-      @env, "bash", SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-io/tap"
+      @env, RbConfig.ruby, SYNTAX_CHECK, REPOSITORY_ROOT, "starhaven-io/tap"
     )
 
     assert status.success?, stderr

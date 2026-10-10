@@ -48,8 +48,9 @@ Before committing README link changes:
 
 - Run `just lychee`.
 
-The repository test suite covers exact cask inventory/platform routing,
-invalid and symlinked cask inputs, local tap alias safety, and publisher update
+Run `just setup` to install the locked test dependencies with the Ruby version
+in `.ruby-version`. The repository test suite covers exact cask inventory/platform
+routing, invalid and symlinked cask inputs, local tap alias safety, and publisher update
 content and release provenance. Fleet's required commit-policy workflow and the
 managed local hook enforce DCO sign-offs. Run the repository tests with
 `just test`; `just check` adds Homebrew syntax and the workflow, shell,
