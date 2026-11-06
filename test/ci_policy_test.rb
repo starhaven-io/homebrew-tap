@@ -15,6 +15,7 @@ class CiPolicyTest < Minitest::Test
     workflow = YAML.safe_load_file(POLICY_WORKFLOW, permitted_classes: [], aliases: false)
     @policy = workflow.fetch("jobs").fetch("verify")
     @top_level_permissions = workflow.fetch("permissions")
+    @concurrency = workflow.fetch("concurrency")
     @ci_source = File.read(CI_WORKFLOW)
     @ci = YAML.safe_load_file(CI_WORKFLOW, permitted_classes: [], aliases: false)
   end
@@ -48,6 +49,11 @@ class CiPolicyTest < Minitest::Test
       @policy.fetch("permissions"),
     )
     assert_equal({}, @top_level_permissions)
+  end
+
+  def test_policy_never_cancels_an_in_progress_run
+    assert_equal false, @concurrency.fetch("cancel-in-progress")
+    assert_equal "publisher-cask-policy-${{ github.event.pull_request.number }}", @concurrency.fetch("group")
   end
 
   def test_publisher_branch_routing_fails_closed_outside_reserved_namespaces

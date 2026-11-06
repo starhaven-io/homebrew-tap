@@ -63,14 +63,19 @@ when changing the workflow topology; identical tools do not make the triggers
 or reporting contracts interchangeable.
 
 Keep `Verify publisher cask` as a separately required, main-targeted
-`pull_request_target` check. It must execute only base-branch code, treat
-proposed cask blobs as data, and retain read-only permissions. The `bump-`
-and `fleet-sync-` branch prefixes are reserved for publisher automation.
-Bot-authored pull requests outside those lowercase namespaces fail closed.
-`fleet-sync-` pull requests may not change `Casks/`, `scripts/`, `test/`,
-`.ruby-version`, or the policy workflow; land such edits separately. Any other
-pull request that changes only a cask's version or checksums must also point at
-a published, stable, attested release, though it may roll back.
+`pull_request_target` check. The organization ruleset requires it as a
+workflow pinned to this repository's `main` by path, so a same-named job from
+a pull request tree cannot stand in for it; keep the workflow's path and its
+`pull_request_target` trigger stable, expect the ruleset to ignore the
+trigger's filters and types, and never cancel its in-progress runs. It must
+execute only base-branch code, treat proposed cask blobs as data, and retain
+read-only permissions. The `bump-` and `fleet-sync-` branch prefixes are
+reserved for publisher automation. Bot-authored pull requests outside those
+lowercase namespaces fail closed. `fleet-sync-` pull requests may not change
+`Casks/`, `scripts/`, `test/`, `.ruby-version`, or the policy workflow; land
+such edits separately. Any other pull request that changes only a cask's
+version or checksums must also point at a published, stable, attested release,
+though it may roll back.
 
 ## Repository structure
 
