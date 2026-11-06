@@ -445,6 +445,154 @@ class PublisherCaskPolicyTest < Minitest::Test
     )
   end
 
+  def test_fleet_sync_updated_from_main_is_judged_on_its_own_changes
+    base = commit_files(
+      "Casks/brewy.rb" => simple_cask("brewy", "Brewy", "1.0.0", "a" * 64),
+      "justfile"       => "check:\n",
+    )
+    git("switch", "--quiet", "--create", "fleet-sync-v2026.11.05.1", base)
+    commit_files("justfile" => "check:\n    echo synced\n")
+    git("switch", "--quiet", "main")
+    tip = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", "b" * 64))
+    head = merge_main_into("fleet-sync-v2026.11.05.1")
+
+    result = PublisherCaskPolicy.verify!(root: @root, env: fleet_sync_environment(tip, head))
+
+    assert_equal ["justfile"], result.fetch("fleet_sync").fetch("paths")
+  end
+
+  def test_bump_is_judged_on_its_merge_when_main_changed_the_cask_elsewhere
+    content = "fork point release"
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("switch", "--quiet", "--create", "bump-brewy-1.1.0", base)
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", Digest::SHA256.hexdigest(content)))
+    git("switch", "--quiet", "main")
+    tip = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64).sub("Test cask", "Renamed cask"))
+    plan = build_plan(base, head, "brewy", "1.1.0")
+    client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0.zip" => content })
+
+    result = PublisherCaskPolicy.verify_pr!(
+      root:   @root,
+      env:    publisher_environment(tip, head, "brewy", "1.1.0"),
+      client: client,
+    )
+
+    assert_equal plan, result.fetch("plan")
+  end
+
+  def test_bump_verifies_the_artifact_template_its_merge_will_carry
+    content = "universal release"
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("switch", "--quiet", "--create", "bump-brewy-1.1.0", base)
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", Digest::SHA256.hexdigest(content)))
+    git("switch", "--quiet", "main")
+    tip = commit_cask("brewy", universal_cask("1.0.0", "a" * 64))
+    merged_cask = universal_cask("1.1.0", Digest::SHA256.hexdigest(content))
+    merged = PublisherCaskPolicy::SourceParser.new(merged_cask, "brewy").parse
+    plan = PublisherCaskPolicy.release_plan("brewy", merged)
+    client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0-universal.zip" => content })
+
+    result = PublisherCaskPolicy.verify_pr!(
+      root:   @root,
+      env:    publisher_environment(tip, head, "brewy", "1.1.0"),
+      client: client,
+    )
+
+    assert_equal plan, result.fetch("plan")
+    artifact_names = result.fetch("plan").fetch("artifacts").map { |artifact| artifact.fetch("name") }
+    assert_equal ["Brewy-1.1.0-universal.zip"], artifact_names
+  end
+
+  def test_rejects_a_bump_whose_merge_would_request_an_unpublished_artifact
+    content = "fork point release"
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("switch", "--quiet", "--create", "bump-brewy-1.1.0", base)
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", Digest::SHA256.hexdigest(content)))
+    git("switch", "--quiet", "main")
+    tip = commit_cask("brewy", universal_cask("1.0.0", "a" * 64))
+    plan = build_plan(base, head, "brewy", "1.1.0")
+    client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0.zip" => content })
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy.verify_pr!(
+        root:   @root,
+        env:    publisher_environment(tip, head, "brewy", "1.1.0"),
+        client: client,
+      )
+    end
+    assert_includes error.message, "exactly one Brewy-1.1.0-universal.zip"
+  end
+
+  def test_rejects_a_bump_that_conflicts_with_the_base_branch
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("switch", "--quiet", "--create", "bump-brewy-1.1.0", base)
+    head = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", "b" * 64))
+    git("switch", "--quiet", "main")
+    tip = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.2.0", "c" * 64))
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy.verify_pr!(
+        root:   @root,
+        env:    publisher_environment(tip, head, "brewy", "1.1.0"),
+        client: Object.new,
+      )
+    end
+    assert_includes error.message, "conflicts with the base branch"
+  end
+
+  def test_bump_updated_from_main_after_an_unrelated_change_still_modifies_one_cask
+    content = "merged release"
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("switch", "--quiet", "--create", "bump-brewy-1.1.0", base)
+    commit_cask("brewy", simple_cask("brewy", "Brewy", "1.1.0", Digest::SHA256.hexdigest(content)))
+    git("switch", "--quiet", "main")
+    tip = commit_files("README.md" => "unrelated\n")
+    head = merge_main_into("bump-brewy-1.1.0")
+    plan = build_plan(tip, head, "brewy", "1.1.0")
+    client = FakeGitHubClient.new(plan, contents: { "Brewy-1.1.0.zip" => content })
+
+    result = PublisherCaskPolicy.verify_pr!(
+      root:   @root,
+      env:    publisher_environment(tip, head, "brewy", "1.1.0"),
+      client: client,
+    )
+
+    assert_equal "1.1.0", result.fetch("plan").fetch("version")
+  end
+
+  def test_rejects_a_bump_below_the_version_merged_into_its_branch
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("switch", "--quiet", "--create", "bump-brewy-1.1.0", base)
+    bump = simple_cask("brewy", "Brewy", "1.1.0", "b" * 64)
+    commit_cask("brewy", bump)
+    git("switch", "--quiet", "main")
+    tip = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.2.0", "c" * 64))
+    git("switch", "--quiet", "bump-brewy-1.1.0")
+    _stdout, _stderr, status = Open3.capture3("git", "-C", @root, "merge", "--quiet", "--no-edit", "main")
+    refute status.success?, "the overlapping bump must conflict"
+    head = commit_cask("brewy", bump)
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy.verify_pr!(
+        root:   @root,
+        env:    publisher_environment(tip, head, "brewy", "1.1.0"),
+        client: Object.new,
+      )
+    end
+    assert_includes error.message, "advance monotonically"
+  end
+
+  def test_rejects_a_head_without_a_merge_base
+    base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
+    git("switch", "--quiet", "--orphan", "unrelated")
+    head = commit_files("README.md" => "unrelated\n")
+
+    error = assert_raises(PublisherCaskPolicy::PolicyError) do
+      PublisherCaskPolicy.verify!(root: @root, env: fleet_sync_environment(base, head))
+    end
+    assert_includes error.message, "no merge base"
+  end
+
   def test_rejects_bot_pull_requests_outside_the_reserved_namespaces
     base = commit_cask("brewy", simple_cask("brewy", "Brewy", "1.0.0", "a" * 64))
     head = commit_files("README.md" => "unrelated\n")
@@ -543,6 +691,16 @@ class PublisherCaskPolicyTest < Minitest::Test
     { "BASE_SHA" => base, "HEAD_SHA" => head, "HEAD_REF" => "fleet-sync-v2026.09.23.1" }
   end
 
+  def merge_main_into(branch)
+    git("switch", "--quiet", branch)
+    git("merge", "--quiet", "--no-edit", "main")
+    git("rev-parse", "HEAD").strip
+  end
+
+  def universal_cask(version, sha256)
+    simple_cask("brewy", "Brewy", version, sha256).sub('.zip"', '-universal.zip"')
+  end
+
   def simple_cask(token, product, version, sha256)
     <<~RUBY
       cask "#{token}" do
@@ -623,7 +781,7 @@ class PublisherCaskPolicyTest < Minitest::Test
     PublisherCaskPolicy.build_plan(
       root:             @root,
       base_ref:         base,
-      head_ref:         head,
+      candidate_ref:    head,
       token:            token,
       expected_version: version,
     )
