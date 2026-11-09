@@ -2,6 +2,9 @@ name: Publisher Cask Policy
 
 on:
   # The verifier stays on the base SHA and treats the proposed commit as data.
+  # The organization ruleset requires this workflow by repository, path and
+  # ref; it ignores the filters and types below and runs on opened,
+  # synchronize and reopened.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
     branches:
       - main
@@ -11,9 +14,11 @@ on:
       - synchronize
       - edited
 
+# A ruleset workflow must not cancel in-progress runs: a cancelled run never
+# satisfies the gate.
 concurrency:
   group: "publisher-cask-policy-${{ github.event.pull_request.number }}"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions: {}
 
