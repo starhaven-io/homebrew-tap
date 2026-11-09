@@ -454,12 +454,10 @@ module PublisherCaskPolicy
   end
 
   def verify_release_updates!(root: repository_root, env: ENV, client: GitHubClient.new)
-    base_sha, head_sha = %w[BASE_SHA HEAD_SHA].map do |name|
-      resolve_commit(root, env.fetch(name) { raise PolicyError, "Missing environment variable: #{name}" })
-    end
+    base_sha, candidate = resolve_candidate(root, env)
     verifier = ReleaseVerifier.new(client: client)
-    releases = modified_cask_tokens(root, base_sha, head_sha).filter_map do |token|
-      plan = release_update_plan(root, base_sha, head_sha, token)
+    releases = modified_cask_tokens(root, base_sha, candidate).filter_map do |token|
+      plan = release_update_plan(root, base_sha, candidate, token)
       { "plan" => plan, "verification" => verifier.verify!(plan) } if plan
     end
 
@@ -468,26 +466,24 @@ module PublisherCaskPolicy
 
   # Structural cask edits are reviewed as code. A pure version or checksum
   # update must still point at a published, attested release, but may roll back.
-  def release_update_plan(root, base_sha, head_sha, token)
+  def release_update_plan(root, base_sha, candidate, token)
     base_text = read_cask(root, base_sha, token)
-    head_text = read_cask(root, head_sha, token)
+    candidate_text = read_cask(root, candidate, token)
     begin
       base_source = SourceParser.new(base_text, token).parse
-      head_source = SourceParser.new(head_text, token).parse
+      candidate_source = SourceParser.new(candidate_text, token).parse
     rescue PolicyError
       return
     end
-    return if base_source.fetch(:normalized) != head_source.fetch(:normalized)
+    return if base_source.fetch(:normalized) != candidate_source.fetch(:normalized)
 
-    validate_version!(head_source.fetch(:version))
-    release_plan(token, head_source)
+    validate_version!(candidate_source.fetch(:version))
+    release_plan(token, candidate_source)
   end
 
   def verify_fleet_sync!(root: repository_root, env: ENV)
-    base_sha, head_sha = %w[BASE_SHA HEAD_SHA].map do |name|
-      resolve_commit(root, env.fetch(name) { raise PolicyError, "Missing environment variable: #{name}" })
-    end
-    paths = changed_paths(root, base_sha, head_sha)
+    base_sha, candidate = resolve_candidate(root, env)
+    paths = changed_paths(root, base_sha, candidate)
     protected_paths = paths.select { |path| FLEET_SYNC_PROTECTED_PATHS.any? { |pattern| path.match?(pattern) } }
     unless protected_paths.empty?
       raise PolicyError, "Fleet sync may not change publisher-owned paths: #{protected_paths.join(", ")}"
@@ -510,9 +506,8 @@ module PublisherCaskPolicy
       raise PolicyError, "starhaven-bot pull requests must use a same-repository branch targeting main"
     end
 
-    base_sha = resolve_commit(root, metadata.fetch("BASE_SHA"))
-    head_sha = resolve_commit(root, metadata.fetch("HEAD_SHA"))
-    status, path = exactly_one_change(root, base_sha, head_sha)
+    base_sha, candidate = resolve_candidate(root, metadata)
+    status, path = exactly_one_change(root, base_sha, candidate)
     path_match = path&.match(CASK_PATH_PATTERN)
     valid_change = status == "M" && path_match
     unless valid_change
@@ -526,38 +521,40 @@ module PublisherCaskPolicy
       raise PolicyError, "Tap publisher branch, title, and cask path do not agree"
     end
 
-    plan = build_plan(root: root, base_ref: base_sha, head_ref: head_sha, token: token, expected_version: version)
+    plan = build_plan(
+      root: root, base_ref: base_sha, candidate_ref: candidate, token: token, expected_version: version,
+    )
     result = ReleaseVerifier.new(client: client).verify!(plan)
     { "plan" => plan, "verification" => result }
   end
 
-  def build_plan(root:, base_ref:, head_ref:, token:, expected_version:)
+  def build_plan(root:, base_ref:, candidate_ref:, token:, expected_version:)
     validate_token!(token)
     raise PolicyError, "Publisher cask is not in the tap inventory: #{token}" unless PRODUCTS.key?(token)
 
     validate_version!(expected_version)
 
-    base_sha = resolve_commit(root, base_ref)
-    head_sha = resolve_commit(root, head_ref)
-    base_source = SourceParser.new(read_cask(root, base_sha, token), token).parse
-    head_source = SourceParser.new(read_cask(root, head_sha, token), token).parse
+    base_tree = resolve_tree(root, base_ref)
+    candidate_tree = resolve_tree(root, candidate_ref)
+    base_source = SourceParser.new(read_cask(root, base_tree, token), token).parse
+    candidate_source = SourceParser.new(read_cask(root, candidate_tree, token), token).parse
 
-    if base_source.fetch(:normalized) != head_source.fetch(:normalized)
+    if base_source.fetch(:normalized) != candidate_source.fetch(:normalized)
       raise PolicyError, "Publisher cask updates may change only version and sha256 values"
     end
-    if head_source.fetch(:version) != expected_version
+    if candidate_source.fetch(:version) != expected_version
       raise PolicyError, "Publisher cask version does not match the pull request title"
     end
 
     validate_version!(base_source.fetch(:version))
-    if Gem::Version.new(head_source.fetch(:version)) <= Gem::Version.new(base_source.fetch(:version))
+    if Gem::Version.new(candidate_source.fetch(:version)) <= Gem::Version.new(base_source.fetch(:version))
       raise PolicyError, "Publisher cask version must advance monotonically"
     end
-    if base_source.fetch(:repository) != head_source.fetch(:repository)
+    if base_source.fetch(:repository) != candidate_source.fetch(:repository)
       raise PolicyError, "Publisher cask repository changed"
     end
 
-    release_plan(token, head_source)
+    release_plan(token, candidate_source)
   end
 
   def release_plan(token, source)
@@ -582,37 +579,76 @@ module PublisherCaskPolicy
     output
   end
 
-  def read_cask(root, commit, token)
+  def resolve_tree(root, ref)
+    output = git(root, "rev-parse", "--verify", "#{ref}^{tree}").strip
+    raise PolicyError, "Git reference did not resolve to a tree: #{ref}" unless output.match?(/\A[0-9a-f]{40}\z/)
+
+    output
+  end
+
+  # BASE_SHA is the base branch tip. The gate judges the merge GitHub would
+  # perform: the head merged onto that tip from their merge base. Judging the
+  # head alone would let the merge combine it with base changes the verifier
+  # never saw, and diffing from the tip would attribute every concurrent base
+  # change to the pull request.
+  def resolve_candidate(root, env)
+    base_tip, head_sha = %w[BASE_SHA HEAD_SHA].map do |name|
+      resolve_commit(root, env.fetch(name) { raise PolicyError, "Missing environment variable: #{name}" })
+    end
+    [base_tip, candidate_tree(root, merge_base(root, base_tip, head_sha), base_tip, head_sha)]
+  end
+
+  def merge_base(root, base_sha, head_sha)
+    stdout, stderr, status = Open3.capture3("git", "-C", root, "merge-base", base_sha, head_sha)
+    output = stdout.strip
+    return output if status.success? && output.match?(/\A[0-9a-f]{40}\z/)
+    raise PolicyError, "Git command failed (merge-base): #{stderr.strip}" if status.exitstatus != 1
+
+    raise PolicyError, "Pull request head shares no merge base with the base branch: #{head_sha}"
+  end
+
+  def candidate_tree(root, merge_base, base_sha, head_sha)
+    stdout, stderr, status = Open3.capture3(
+      "git", "-C", root, "merge-tree", "--write-tree", "--merge-base=#{merge_base}", base_sha, head_sha
+    )
+    tree = stdout.lines.first.to_s.strip
+    return tree if status.success? && tree.match?(/\A[0-9a-f]{40}\z/)
+    raise PolicyError, "Git command failed (merge-tree): #{stderr.strip}" if status.exitstatus != 1
+
+    raise PolicyError, "Pull request head conflicts with the base branch: #{head_sha}"
+  end
+
+  def read_cask(root, revision, token)
     path = "Casks/#{token}.rb"
-    tree_entry = git(root, "ls-tree", "-z", commit, "--", path)
+    tree_entry = git(root, "ls-tree", "-z", revision, "--", path)
     match = tree_entry.match(/\A(?<mode>\d+) blob [0-9a-f]{40}\t#{Regexp.escape(path)}\0\z/)
     valid_file = match && match[:mode] == "100644"
     unless valid_file
       raise PolicyError, "Publisher cask must be a regular non-executable file: #{token}"
     end
 
-    size = Integer(git(root, "cat-file", "-s", "#{commit}:#{path}").strip, 10)
+    size = Integer(git(root, "cat-file", "-s", "#{revision}:#{path}").strip, 10)
     raise PolicyError, "Publisher cask is unexpectedly large: #{token}" if size > MAX_CASK_BYTES
 
-    git(root, "show", "#{commit}:#{path}")
+    git(root, "show", "#{revision}:#{path}")
   rescue ArgumentError
     raise PolicyError, "Publisher cask size is invalid: #{token}"
   end
 
-  def exactly_one_change(root, base_sha, head_sha)
-    fields = git(root, "diff", "--name-status", "--no-renames", "-z", "#{base_sha}...#{head_sha}").split("\0", -1)
+  def exactly_one_change(root, base_sha, candidate)
+    fields = git(root, "diff", "--name-status", "--no-renames", "-z", base_sha, candidate).split("\0", -1)
     fields.pop if fields.last == ""
     return [nil, nil] if fields.length != 2
 
     fields
   end
 
-  def changed_paths(root, base_sha, head_sha)
-    git(root, "diff", "--name-only", "--no-renames", "-z", "#{base_sha}...#{head_sha}").split("\0").reject(&:empty?)
+  def changed_paths(root, base_sha, candidate)
+    git(root, "diff", "--name-only", "--no-renames", "-z", base_sha, candidate).split("\0").reject(&:empty?)
   end
 
-  def modified_cask_tokens(root, base_sha, head_sha)
-    fields = git(root, "diff", "--name-status", "--no-renames", "-z", "#{base_sha}...#{head_sha}").split("\0")
+  def modified_cask_tokens(root, base_sha, candidate)
+    fields = git(root, "diff", "--name-status", "--no-renames", "-z", base_sha, candidate).split("\0")
     fields.each_slice(2).filter_map do |status, path|
       token = path&.match(CASK_PATH_PATTERN)&.[](1)
       token if status == "M" && PRODUCTS.key?(token)

@@ -26,9 +26,20 @@ class CiPolicyTest < Minitest::Test
     refute_match(/^\s+workflow_dispatch:/, @source)
 
     checkout = step("Check out trusted policy")
-    assert_equal "${{ github.event.pull_request.base.sha }}", checkout.fetch("with").fetch("ref")
+    refute checkout.fetch("with").key?("ref"), "the trusted checkout must stay on the event's base branch tip"
+    assert_equal 0, checkout.fetch("with").fetch("fetch-depth")
     assert_equal false, checkout.fetch("with").fetch("persist-credentials")
     refute_includes checkout.fetch("with").values, "${{ github.event.pull_request.head.sha }}"
+  end
+
+  def test_policy_takes_the_base_from_the_checkout_rather_than_the_payload
+    base = step("Resolve the base branch tip")
+
+    assert_equal "base", base.fetch("id")
+    assert_includes base.fetch("run"), "git rev-parse --verify 'HEAD^{commit}'"
+    assert_includes base.fetch("run"), 'echo "sha=${base_sha}" >> "${GITHUB_OUTPUT}"'
+    assert_equal "${{ steps.base.outputs.sha }}", step("Verify publisher policy").fetch("env").fetch("BASE_SHA")
+    refute_includes @source, "github.event.pull_request.base.sha"
   end
 
   def test_policy_fetches_the_head_only_as_data_and_uses_the_local_verifier

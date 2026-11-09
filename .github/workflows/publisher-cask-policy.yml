@@ -1,7 +1,8 @@
 name: Publisher Cask Policy
 
 on:
-  # The verifier stays on the base SHA and treats the proposed commit as data.
+  # The verifier runs from the base branch tip and treats the proposed commit
+  # as data.
   # The organization ruleset requires this workflow by repository, path and
   # ref; it ignores the filters and types below and runs on opened,
   # synchronize and reopened.
@@ -50,13 +51,21 @@ jobs:
           esac
 
       - name: Check out trusted policy
-        # pull_request_target keeps this workflow and verifier on the base branch;
-        # no file or executable from the proposed head is loaded.
+        # pull_request_target keeps this workflow and verifier on the base branch
+        # tip at this event; no file or executable from the proposed head is
+        # loaded.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Resolve the base branch tip
+        id: base
+        # pull_request.base.sha is not refreshed when the base branch advances,
+        # so the verifier takes the base from the checkout instead.
+        run: |
+          base_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+          echo "sha=${base_sha}" >> "${GITHUB_OUTPUT}"
 
       - name: Fetch proposed commit as data
         env:
@@ -72,7 +81,7 @@ jobs:
         env:
           ACTOR_ID: ${{ github.actor_id }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
