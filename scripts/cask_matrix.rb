@@ -6,10 +6,9 @@ require "json"
 # Derives CI runners from validated cask source files.
 module CaskMatrix
   TOKEN_PATTERN = /\A[a-z0-9][a-z0-9_.+-]*\z/
-  LINUX_CHECKSUM_PATTERN = /^(?:[ \t]*sha256[^\n#]*?|[ \t]+)(?:arm64_linux|x86_64_linux):/
   LINUX_BLOCK_PATTERN = /^[ \t]*on_linux[ \t]+do\b/
   MACOS_RUNNER = "macos-26"
-  LINUX_RUNNER = "ubuntu-24.04"
+  LINUX_RUNNERS = { "x86_64_linux" => "ubuntu-24.04", "arm64_linux" => "ubuntu-24.04-arm" }.freeze
 
   class InvalidCask < StandardError; end
 
@@ -22,10 +21,13 @@ module CaskMatrix
       validate_path!(path, token)
 
       source = File.read(path, encoding: "UTF-8")
-      linux_supported = source.match?(LINUX_CHECKSUM_PATTERN) || source.match?(LINUX_BLOCK_PATTERN)
-      runners = [MACOS_RUNNER]
-      runners << LINUX_RUNNER if linux_supported
-      runners.map { |runner| { cask: token, runner: runner } }
+      linux_runners = LINUX_RUNNERS.filter_map do |selector, runner|
+        runner if source.match?(/^(?:[ \t]*sha256[^\n#]*?|[ \t]+)#{selector}:/)
+      end
+      if linux_runners.empty? && source.match?(LINUX_BLOCK_PATTERN)
+        linux_runners << LINUX_RUNNERS.fetch("x86_64_linux")
+      end
+      [MACOS_RUNNER, *linux_runners].map { |runner| { cask: token, runner: runner } }
     end
 
     { include: entries }

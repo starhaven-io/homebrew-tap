@@ -24,6 +24,11 @@ brew install --cask starhaven-io/tap/<cask-name>
 | [`midden`](https://github.com/starhaven-io/midden) | macOS (Apple silicon); Linux (ARM64, x86-64) | Resolve, audit, visualize, and clean coding-agent context and state |
 | [`pinprick`](https://github.com/starhaven-io/pinprick) | macOS (Apple silicon); Linux (ARM64, x86-64) | GitHub Actions supply chain security tool |
 
+The Linux casks for midden and pinprick require glibc 2.39 or newer. For older
+distributions, use the static musl binaries from the
+[midden releases](https://github.com/starhaven-io/midden/releases) or
+[pinprick releases](https://github.com/starhaven-io/pinprick/releases).
+
 <!-- fleet:block license-section -->
 
 ## License
