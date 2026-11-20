@@ -1,8 +1,11 @@
 # typed: strict
 # frozen_string_literal: true
 
+require "fileutils"
+require "json"
 require "minitest/autorun"
 require "open3"
+require "tmpdir"
 require "yaml"
 
 class CiPolicyTest < Minitest::Test
@@ -137,6 +140,80 @@ class CiPolicyTest < Minitest::Test
 
     assert_includes guidance, "Keep `Verify publisher cask` as a separately required"
     refute_includes guidance, "Publisher Cask Policy / Verify publisher cask"
+  end
+
+  def test_install_selection_exercises_the_affected_platforms
+    resolver = job_step(@ci.fetch("jobs").fetch("syntax"), "Resolve cask list").fetch("run")
+    script = <<~BASH + resolver
+      set -euo pipefail
+      git() {
+        case "$1" in
+          rev-parse) return 0 ;;
+          diff) test "${!#}" = scripts/cask_matrix.rb && printf '%s' "$CHANGED_PATHS" ;;
+          *) return 1 ;;
+        esac
+      }
+    BASH
+    Dir.mktmpdir do |dir|
+      output = File.join(dir, "outputs")
+      env = { "GITHUB_BASE_REF" => "main", "RUNNER_TEMP" => dir, "GITHUB_OUTPUT" => output }
+      [
+        ["pull_request", "Casks/midden.rb\n", "", "", "true", "true", 3],
+        ["pull_request", ".github/workflows/ci.yml\n", "", "", "true", "true", 8],
+        ["pull_request", "scripts/cask_matrix.rb\n", "", "", "true", "true", 8],
+        ["pull_request", "", "", "", "false", "false", 0],
+        ["workflow_dispatch", "", "brewy", "false", "true", "false", 1],
+        ["workflow_dispatch", "", "brewy", "true", "true", "true", 1],
+        ["push", "", "", "", "false", "false", 8],
+      ].each do |event, changes, tokens, enabled, run_casks, install, count|
+        File.write(output, "")
+        scenario = { "GITHUB_EVENT_NAME" => event, "CHANGED_PATHS" => changes,
+                     "INPUT_CASKS" => tokens, "INPUT_INSTALL" => enabled }
+        log, status = Open3.capture2e(env.merge(scenario), "bash", "-c", script)
+        assert_predicate status, :success?, log
+        values = File.readlines(output, chomp: true).to_h { |line| line.split("=", 2) }
+        entries = JSON.parse(values.fetch("matrix")).fetch("include")
+        actual = [values.fetch("run_casks"), values.fetch("install"), entries.size]
+        assert_equal [run_casks, install, count], actual, scenario.inspect
+      end
+    end
+  end
+
+  def test_installed_cli_requires_the_cask_version_and_all_three_completions
+    job = @ci.fetch("jobs").fetch("cask")
+    smoke = job_step(job, "Verify installed cask")
+    assert_equal "steps.install.outcome == 'success'", smoke.fetch("if")
+    assert_equal "always() && steps.install.outcome == 'success'", job_step(job, "Uninstall cask").fetch("if")
+
+    Dir.mktmpdir do |prefix|
+      files = %w[bin/midden etc/bash_completion.d/midden share/zsh/site-functions/_midden
+                 share/fish/vendor_completions.d/midden.fish]
+      files.each do |file|
+        path = File.join(prefix, file)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "completion")
+      end
+      binary = File.join(prefix, "bin/midden")
+      File.write(binary, "#!/bin/sh\ntest \"$1\" = --version && echo midden 1.0\n")
+      File.chmod(0755, binary)
+      env = { "TEST_PREFIX" => prefix, "CASK" => "midden", "TAP_NAME" => "example/tap", "EXPECTED" => "1.0" }
+      script = <<~BASH + smoke.fetch("run")
+        set -euo pipefail
+        brew() {
+          case "$1" in
+            --prefix) echo "$TEST_PREFIX" ;;
+            info) test "$4" = "$TAP_NAME/$CASK" && jq -n --arg version "$EXPECTED" '{casks: [{version: $version}]}' ;;
+            *) return 1 ;;
+          esac
+        }
+      BASH
+      assert_predicate Open3.capture3(env, "bash", "-c", script).last, :success?
+      refute_predicate Open3.capture3(env.merge("EXPECTED" => "2.0"), "bash", "-c", script).last, :success?
+      File.truncate(File.join(prefix, files.last), 0)
+      output, _, status = Open3.capture3(env, "bash", "-c", script)
+      refute_predicate status, :success?
+      assert_includes output, files.last
+    end
   end
 
   private

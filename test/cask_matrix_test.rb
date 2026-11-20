@@ -23,8 +23,10 @@ class CaskMatrixTest < Minitest::Test
           { cask: "macosdb", runner: "macos-26" },
           { cask: "midden", runner: "macos-26" },
           { cask: "midden", runner: "ubuntu-24.04" },
+          { cask: "midden", runner: "ubuntu-24.04-arm" },
           { cask: "pinprick", runner: "macos-26" },
           { cask: "pinprick", runner: "ubuntu-24.04" },
+          { cask: "pinprick", runner: "ubuntu-24.04-arm" },
         ],
       },
       matrix,
@@ -68,6 +70,7 @@ class CaskMatrixTest < Minitest::Test
           include: [
             { cask: "example", runner: "macos-26" },
             { cask: "example", runner: "ubuntu-24.04" },
+            { cask: "example", runner: "ubuntu-24.04-arm" },
           ],
         },
         CaskMatrix.build(["example"], root: root),
@@ -89,6 +92,15 @@ class CaskMatrixTest < Minitest::Test
         },
         CaskMatrix.build(["example"], root: root),
       )
+    end
+  end
+
+  def test_an_arm_only_linux_checksum_runs_on_arm
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "Casks"))
+      File.write(File.join(root, "Casks", "example.rb"), "  sha256 arm64_linux: \"#{"a" * 64}\"\n")
+      runners = CaskMatrix.build(["example"], root: root).fetch(:include).map { |entry| entry.fetch(:runner) }
+      assert_equal %w[macos-26 ubuntu-24.04-arm], runners
     end
   end
 

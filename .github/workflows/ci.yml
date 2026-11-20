@@ -112,25 +112,35 @@ jobs:
           INPUT_INSTALL: ${{ inputs.install }}
         run: |
           tokens=()
+          select_all=true
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_CASKS//[[:space:],]/}" ]]; then
+            select_all=false
             normalized="${INPUT_CASKS//,/ }"
             read -r -a tokens <<< "${normalized}"
           elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            select_all=false
             base_ref="origin/${GITHUB_BASE_REF}"
             if ! git rev-parse --verify --quiet "${base_ref}" >/dev/null; then
               git fetch --no-tags origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
             fi
             cask_paths="${RUNNER_TEMP}/changed-casks.txt"
-            if ! git diff --name-only --diff-filter=ACMR "${base_ref}...HEAD" -- "Casks/*.rb" > "${cask_paths}"; then
+            if ! git diff --name-only --diff-filter=ACMR "${base_ref}...HEAD" -- "Casks/*.rb" .github/workflows/ci.yml scripts/cask_matrix.rb > "${cask_paths}"; then
               echo "::error::Could not enumerate changed casks"
               exit 1
             fi
             while IFS= read -r path; do
+              if [[ "${path}" != Casks/* ]]; then
+                select_all=true
+                break
+              fi
               token="${path#Casks/}"
               tokens+=("${token%.rb}")
             done < "${cask_paths}"
-          else
+          fi
+
+          if [[ "${select_all}" == "true" ]]; then
             # bash 3.2 on the macOS runner has no mapfile; read into the array.
+            tokens=()
             cask_paths="${RUNNER_TEMP}/all-casks.txt"
             if ! find Casks -maxdepth 1 -type f -name "*.rb" -exec basename {} .rb \; | sort > "${cask_paths}"; then
               echo "::error::Could not enumerate repository casks"
@@ -165,7 +175,7 @@ jobs:
           echo "run_casks=${run_casks}" >> "${GITHUB_OUTPUT}"
 
           install=false
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${INPUT_INSTALL}" == "true" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${INPUT_INSTALL}" == "true" ]]; then
             install=true
           fi
           echo "install=${install}" >> "${GITHUB_OUTPUT}"
@@ -210,12 +220,16 @@ jobs:
           resolved_tap="$(ruby scripts/verify_tap_worktree.rb "${GITHUB_WORKSPACE}" "${GITHUB_REPOSITORY}")"
           echo "name=${resolved_tap}" >> "${GITHUB_OUTPUT}"
 
-      # No runner here is Linux arm64, so fetch every variation to verify each checksum.
       - name: Fetch cask
         env:
           CASK: ${{ matrix.cask }}
           TAP_NAME: ${{ steps.tap.outputs.name }}
-        run: brew fetch --cask --retry --force --os=all --arch=all "${TAP_NAME}/${CASK}"
+        run: |
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            brew fetch --cask --retry --force --os=all --arch=all "${TAP_NAME}/${CASK}"
+          else
+            brew fetch --cask --retry --force "${TAP_NAME}/${CASK}"
+          fi
         timeout-minutes: 30
 
       - name: Audit cask
@@ -234,8 +248,35 @@ jobs:
         run: brew install --cask "${TAP_NAME}/${CASK}"
         timeout-minutes: 30
 
+      - name: Verify installed cask
+        if: steps.install.outcome == 'success'
+        env:
+          CASK: ${{ matrix.cask }}
+          TAP_NAME: ${{ steps.tap.outputs.name }}
+        run: |
+          info="$(brew info --cask --json=v2 "${TAP_NAME}/${CASK}")"
+          expected="$(jq -er '.casks[0].version' <<< "${info}")"
+          if [[ "${CASK}" == "brewy" ]]; then
+            app="$(jq -er '.casks[0].artifacts[] | select(has("app")).target' <<< "${info}")"
+            actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${app}/Contents/Info.plist")"
+          else
+            prefix="$(brew --prefix)"
+            actual="$("${prefix}/bin/${CASK}" --version)"
+            actual="${actual#"${CASK} "}"
+            for file in "etc/bash_completion.d/${CASK}" "share/zsh/site-functions/_${CASK}" "share/fish/vendor_completions.d/${CASK}.fish"; do
+              if [[ ! -s "${prefix}/${file}" ]]; then
+                echo "::error::Missing or empty completion ${file}"
+                exit 1
+              fi
+            done
+          fi
+          if [[ "${actual}" != "${expected}" ]]; then
+            echo "::error::Installed ${CASK} version does not match cask ${expected}"
+            exit 1
+          fi
+
       - name: Uninstall cask
-        if: always() && needs.syntax.outputs.install == 'true' && steps.install.outcome == 'success'
+        if: always() && steps.install.outcome == 'success'
         env:
           CASK: ${{ matrix.cask }}
         run: brew uninstall --cask --force --zap "${CASK}"
