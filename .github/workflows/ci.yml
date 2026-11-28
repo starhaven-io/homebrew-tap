@@ -76,7 +76,7 @@ jobs:
     steps:
       - name: Set up Homebrew
         id: setup-homebrew
-        uses: Homebrew/actions/setup-homebrew@ceec4e8419bb3c97ce96e9dda7738499ed5f869d # 2026.11.14.1
+        uses: Homebrew/actions/setup-homebrew@61b401267256bb9c047d6d1481b176d5772a0ba7 # 2026.11.23.1
         with:
           stable: true
 
@@ -87,7 +87,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
+        uses: ruby/setup-ruby@145243922b4465b78e04dd66294782c7de45901f # v1.345.0
         with:
           bundler-cache: true
 
@@ -199,7 +199,7 @@ jobs:
     steps:
       - name: Set up Homebrew
         id: setup-homebrew
-        uses: Homebrew/actions/setup-homebrew@ceec4e8419bb3c97ce96e9dda7738499ed5f869d # 2026.11.14.1
+        uses: Homebrew/actions/setup-homebrew@61b401267256bb9c047d6d1481b176d5772a0ba7 # 2026.11.23.1
         with:
           stable: true
 
@@ -210,7 +210,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
+        uses: ruby/setup-ruby@145243922b4465b78e04dd66294782c7de45901f # v1.345.0
         with:
           bundler: none
 
