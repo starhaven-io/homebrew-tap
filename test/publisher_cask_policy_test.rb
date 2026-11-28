@@ -166,7 +166,34 @@ class PublisherCaskPolicyTest < Minitest::Test
   end
 
   def test_rejects_legacy_nested_platform_checksums
-    source = legacy_platform_cask("pinprick", "1.0.0", "a" * 64, "b" * 64, "c" * 64)
+    macos_sha = "a" * 64
+    linux_arm_sha = "b" * 64
+    linux_intel_sha = "c" * 64
+    source = <<~RUBY
+      cask "pinprick" do
+        arch arm: "aarch64", intel: "x86_64"
+        os macos: "apple-darwin", linux: "unknown-linux-gnu"
+
+        version "1.0.0"
+
+        on_macos do
+          sha256 "#{macos_sha}"
+
+          depends_on arch: :arm64
+        end
+        on_linux do
+          sha256 arm64_linux:  "#{linux_arm_sha}",
+                 x86_64_linux: "#{linux_intel_sha}"
+        end
+
+        url "https://github.com/starhaven-io/pinprick/releases/download/v\#{version}/pinprick-\#{version}-\#{arch}-\#{os}.tar.gz"
+        name "pinprick"
+        desc "Test cask"
+        homepage "https://github.com/starhaven-io/pinprick"
+
+        binary "pinprick"
+      end
+    RUBY
 
     error = assert_raises(PublisherCaskPolicy::PolicyError) do
       PublisherCaskPolicy::SourceParser.new(source, "pinprick").parse
@@ -730,34 +757,6 @@ class PublisherCaskPolicyTest < Minitest::Test
 
         on_macos do
           depends_on arch: :arm64
-        end
-
-        url "https://github.com/starhaven-io/#{token}/releases/download/v\#{version}/#{token}-\#{version}-\#{arch}-\#{os}.tar.gz"
-        name "#{token}"
-        desc "Test cask"
-        homepage "https://github.com/starhaven-io/#{token}"
-
-        binary "#{token}"
-      end
-    RUBY
-  end
-
-  def legacy_platform_cask(token, version, macos_sha, linux_arm_sha, linux_intel_sha)
-    <<~RUBY
-      cask "#{token}" do
-        arch arm: "aarch64", intel: "x86_64"
-        os macos: "apple-darwin", linux: "unknown-linux-gnu"
-
-        version "#{version}"
-
-        on_macos do
-          sha256 "#{macos_sha}"
-
-          depends_on arch: :arm64
-        end
-        on_linux do
-          sha256 arm64_linux:  "#{linux_arm_sha}",
-                 x86_64_linux: "#{linux_intel_sha}"
         end
 
         url "https://github.com/starhaven-io/#{token}/releases/download/v\#{version}/#{token}-\#{version}-\#{arch}-\#{os}.tar.gz"

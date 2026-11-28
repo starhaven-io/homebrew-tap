@@ -94,7 +94,8 @@ class CiPolicyTest < Minitest::Test
   end
 
   def test_fleet_sync_namespace_check_is_case_sensitive
-    script = "set -euo pipefail\n#{step("Reject unexpected publisher branch").fetch("run")}"
+    reject_script = step("Reject unexpected publisher branch").fetch("run")
+    script = "set -euo pipefail\n#{reject_script}"
 
     {
       "fleet-sync-v2026.09.04.1" => true,
