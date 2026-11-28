@@ -63,7 +63,8 @@ class CheckContractTest < Minitest::Test
         _stdout, stderr, status = Open3.capture3(
           environment.merge("FAIL_CHECK" => failed_gate), *command, unsetenv_others: true
         )
-        assert_equal failed_gate.nil?, status.success?, "#{failed_gate || "all successful"}: #{stderr}"
+        gate_label = failed_gate || "all successful"
+        assert_equal failed_gate.nil?, status.success?, "#{gate_label}: #{stderr}"
         assert_equal gates, File.readlines(environment.fetch("CHECK_LOG"), chomp: true)
       end
     end

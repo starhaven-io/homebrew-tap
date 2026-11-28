@@ -67,14 +67,36 @@ module PublisherCaskPolicy
       validate_sha_matches!(plain_matches, platform_matches)
 
       normalized = normalize(version_match, plain_matches, platform_matches)
-      url_details = parse_url(url_match)
-      bindings = build_bindings(url_details.fetch(:asset_template), plain_matches, platform_matches)
+
+      verified = url_match[:verified]
+      comma = url_match[:comma]
+      if verified.nil? != comma.empty?
+        raise PolicyError, "Cask URL has an unsupported verified form: #{@token}"
+      end
+
+      product = PRODUCTS.fetch(@token)
+      expected_repository = "#{OWNER}/#{product}"
+      prefix = "https://github.com/#{expected_repository}/releases/download/"
+      url = url_match[:url]
+      raise PolicyError, "Cask URL is not bound to #{expected_repository}: #{@token}" unless url.start_with?(prefix)
+
+      if verified && verified != "github.com/#{expected_repository}/"
+        raise PolicyError, "Cask verified host is not bound to #{expected_repository}: #{@token}"
+      end
+
+      tag_template, asset_template = url.delete_prefix(prefix).split("/", 2)
+      unless [VERSION_PLACEHOLDER, "v#{VERSION_PLACEHOLDER}"].include?(tag_template)
+        raise PolicyError, "Cask release tag must derive only from version: #{@token}"
+      end
+      raise PolicyError, "Cask release asset template is missing: #{@token}" if asset_template.nil?
+
+      bindings = build_bindings(asset_template, plain_matches, platform_matches)
 
       {
         version:    version_match[:value],
         normalized: normalized,
-        repository: url_details.fetch(:repository),
-        tag:        render(url_details.fetch(:tag_template), version: version_match[:value]),
+        repository: expected_repository,
+        tag:        render(tag_template, version: version_match[:value]),
         artifacts:  bindings,
       }
     end
@@ -132,66 +154,28 @@ module PublisherCaskPolicy
       normalized
     end
 
-    def parse_url(match)
-      verified = match[:verified]
-      comma = match[:comma]
-      if verified.nil? != comma.empty?
-        raise PolicyError, "Cask URL has an unsupported verified form: #{@token}"
-      end
-
-      product = PRODUCTS.fetch(@token)
-      expected_repository = "#{OWNER}/#{product}"
-      prefix = "https://github.com/#{expected_repository}/releases/download/"
-      url = match[:url]
-      raise PolicyError, "Cask URL is not bound to #{expected_repository}: #{@token}" unless url.start_with?(prefix)
-
-      if verified && verified != "github.com/#{expected_repository}/"
-        raise PolicyError, "Cask verified host is not bound to #{expected_repository}: #{@token}"
-      end
-
-      tag_template, asset_template = url.delete_prefix(prefix).split("/", 2)
-      unless [VERSION_PLACEHOLDER, "v#{VERSION_PLACEHOLDER}"].include?(tag_template)
-        raise PolicyError, "Cask release tag must derive only from version: #{@token}"
-      end
-      raise PolicyError, "Cask release asset template is missing: #{@token}" if asset_template.nil?
-
-      {
-        repository:     expected_repository,
-        tag_template:   tag_template,
-        asset_template: asset_template,
-      }
-    end
-
     def build_bindings(asset_template, plain_matches, platform_matches)
       placeholders = asset_template.scan(/#\{([^}]+)\}/).flatten
       if placeholders == ["version"]
-        return build_single_binding(asset_template, plain_matches, platform_matches)
+        single_checksum = plain_matches.length == 1 && platform_matches.empty? &&
+                          block_range("on_macos").nil? && block_range("on_linux").nil?
+        unless single_checksum
+          raise PolicyError, "Single-asset cask must have one top-level checksum: #{@token}"
+        end
+
+        return [
+          artifact(
+            "default",
+            render(asset_template, version: version_value),
+            plain_matches.first[:digest],
+          ),
+        ]
       end
 
       if placeholders.sort != %w[arch os version]
         raise PolicyError, "Cask release asset placeholders are unsupported: #{@token}"
       end
 
-      build_platform_bindings(asset_template, plain_matches, platform_matches)
-    end
-
-    def build_single_binding(asset_template, plain_matches, platform_matches)
-      single_checksum = plain_matches.length == 1 && platform_matches.empty? &&
-                        block_range("on_macos").nil? && block_range("on_linux").nil?
-      unless single_checksum
-        raise PolicyError, "Single-asset cask must have one top-level checksum: #{@token}"
-      end
-
-      [
-        artifact(
-          "default",
-          render(asset_template, version: version_value),
-          plain_matches.first[:digest],
-        ),
-      ]
-    end
-
-    def build_platform_bindings(asset_template, plain_matches, platform_matches)
       arch = exactly_one_match(ARCH_PATTERN, "literal arch mapping")
       os = exactly_one_match(OS_PATTERN, "literal OS mapping")
       macos_range = block_range("on_macos")
@@ -347,7 +331,8 @@ module PublisherCaskPolicy
       stdout, stderr, status = Open3.capture3(*command)
       return stdout if status.success?
 
-      raise PolicyError, "Command failed (#{command.first(3).join(" ")}): #{stderr.strip}"
+      command_prefix = command.first(3).join(" ")
+      raise PolicyError, "Command failed (#{command_prefix}): #{stderr.strip}"
     end
 
     def encode_path_component(value)
